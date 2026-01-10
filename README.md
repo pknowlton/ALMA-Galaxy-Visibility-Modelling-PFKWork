@@ -1,4 +1,7 @@
-# ALMA Visibility Modelling
+# ALMA Visibility Modelling - Peter Knowlton
+This repository in forked from Emily Carver's ALMA Visibility Modelling repository, with her original README below. The "main" branch is kept up to date with her original repository, while the "pfk-work" branch contains my contributions.
+
+# ALMA Visibility Modelling - Emily Carver
 This repository contains code and other documentation I wrote during the course of my co-op at DAO over the summer of 2025. My project allowed me to learn methods of image synthesis, and compare that to analysis performed directly with the data by testing visibility modelling on galaxies observed by ALMA. To end the term, I presented my work to my colleagues at HAA during Science Tea. A copy of my presentation slides is included in this repo.
 
 When visibilities are imaged for visualization and analysis, the process of imaging introduces artifacts such as the resolution limit imposed by the synthesized beam. Rather than bringing visibilities into the image plane for analysis, it is possible to bring a model into the visibility space and perform analysis there. Visibility modelling techniques can allow for sub-beam structure to be recovered, without the sensitivity trade-off that comes with increased resolution when imaging. Visibility modelling has been utilized in the study of protoplanetary disks, where it has been used to investigate disk features such as gaps, rings, and inner cavities in great detail. However, this same technique has not been applied to structures in other systems, such as galaxies. 
