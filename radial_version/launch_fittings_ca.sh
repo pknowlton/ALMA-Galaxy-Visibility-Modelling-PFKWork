@@ -1,4 +1,3 @@
 #!/bin/bash
-pwd
-conda env list
-conda run -n pk_env_38 python /arc/home/pknowlton/sandbox_pk/hello_simple.py
+echo hi! we found the right bash script
+conda run -n pk_env_38 python /arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/radial_version/run_fittings.py $1 $2 $3 $4 $5

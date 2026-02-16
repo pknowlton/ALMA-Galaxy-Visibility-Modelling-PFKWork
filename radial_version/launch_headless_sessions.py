@@ -30,39 +30,45 @@
 import os
 import numpy as np
 import pandas as pd
-from skaha.session import Session
+from canfar.sessions import Session
 
 #Some intermediate and product files will have to be generated. Define a directory to put them in.
-productdir='/arc/projects/uvdisk_fit/radial_fit_code/grid_run3/'
+productdir='/arc/home/pknowlton/uv_product_dir/'
+print(productdir)
 
 #Name the types of fits you want to perform + iterate over. 
 model_fits = ['gaussring'] #'gaussring', 'jinc'
+print(model_fits)
 
 #Define the explorable ranges for all the parameters in each model.
 #These will get converted to csv files and those files will be read in as arguments (rather than arrays as command line args). 
 #They will be (re-)written in the first row of the grid (in case bounds change between runs).
 model_fits_ranges = {'gaussring': [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5]],
                      'jinc': [[0, 15], [0, 20],[-1, 3], [0, 90], [0, 180],[-2, 2], [-2, 2]]}
+print(model_fits_ranges)
 
 #Define the initial guess for fitting to begin at for each model. (Note that this is the initial guess for row 0, and the point from which all following rows will be adjusted)
 model_fits_initialguesses = {'gaussring': [6, 1, 7, 60, 15, 0, 0],
                              'jinc': [4, 5, 0.5, 25, 18, 0, 0]}
+print(model_fits_initialguesses)
 
 #Define the output product name. Suffixes such as _rowx_corner.png will be added
 model_fits_outputs = {'gaussring': productdir+'gaussring',
                      'jinc': productdir+'jinc'}
+print(model_fits_outputs)
 
 #Path to the param file
-global_paramfile='/arc/projects/uvdisk_fit/radial_fit_code/global_fitting_params.txt'
+global_paramfile='/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/radial_version/global_fitting_params.txt'
+print(global_paramfile)
 
 #choose number of times to perturb the initial guess
-gridrows=100
+gridrows=1
 
 #set the session computing parameters
 cores=8
 mem=6
 image='images.canfar.net/skaha/astroml:latest'
-cmd = '/arc/projects/uvdisk_fit/radial_fit_code/launch_fittings.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
+cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/radial_version/launch_fittings_ca.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
 
 for fit in model_fits:
     for row in range(gridrows):
@@ -72,6 +78,7 @@ for fit in model_fits:
             pd.DataFrame(np.array(model_fits_initialguesses[fit])).to_csv(productdir+fit+'_param_guess_row'+str(row)+'.csv')
             arglist = [global_paramfile, fit, productdir+fit+'_param_ranges.csv', productdir+fit+'_param_guess_row'+str(row)+'.csv', model_fits_outputs[fit]+'_row'+str(row)]
             args = ' '.join(arglist)
+            print(args)
             session = Session()
             session_id = session.create(name=fit+'-row'+str(row),
                                         image=image,

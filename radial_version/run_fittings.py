@@ -216,14 +216,23 @@ def main(paramfile, fitType, ranges, guesses, productname):
     #Set up the logger
     logging.basicConfig(filename=productname+'.log', filemode='w', level=logging.INFO)
 
+    logging.info(paramfile)
+    logging.info(fitType)
+    logging.info(ranges)
+    logging.info(guesses)
+    logging.info(productname)
+
+    logging.info('reading contents of range and guess files')
     #Need to read the contents of the range and guess files. 
     ranges = pd.read_csv(ranges, header=0, index_col=0).values
     guesses = pd.read_csv(guesses, header=0, index_col=0).values[:,0] #(if the shape is (n,1) that causes issues. Need (n,))
 
+    logging.info('reading param file')
     paramdict = read_param_file(paramfile)
     data = initialize_data(paramdict['visFile'], paramdict['obsFreq'])
     ndim=len(ranges)
   
+    logging.info('beginning pool')
     with Pool() as pool:
         sampler=es(paramdict['numWalkers'], ndim, lnpostfn, pool=pool, #note here that if you want a speed-up, eliminate the args passed in here (or at least make it such that the large arrays such as those in data are not passed. Memmap?)
                    args=[ranges, fitType, paramdict['radiusStart'], paramdict['radiusStep'], paramdict['radiusNumSteps'], data[0], data[1], data[2], data[3], data[4], data[5], data[6]]) #In testing, global variables has provided a notable increase in speed, but it is not a fantastic way of making this.
@@ -240,8 +249,10 @@ def main(paramfile, fitType, ranges, guesses, productname):
         fit_end=time.time()
         logging.info("Duration of the fitting run is {0:.1f} seconds".format(fit_end-fit_start))
 
+    print('saving results')
     save_results(fitType, sampler, pos1, productname)
  
+    print('running visualization')
     #run the visualization
     visualize_main(paramdict, fitType, productname+'_pos.txt', productname)
 
@@ -249,4 +260,5 @@ def main(paramfile, fitType, ranges, guesses, productname):
 
 ###%%%###%%%### Call main, wrap in name=main to prevent recursion ###%%%###%%%###
 if __name__=='__main__':
+    print('running main')
     main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
