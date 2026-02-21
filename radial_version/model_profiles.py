@@ -45,7 +45,7 @@ def model_prof(pars, args, fittype):
 
     return chi2
 
-def model_guess(fittype):
+def model_init(fittype):
 
     if fittype == 'gaussring':
         model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0]

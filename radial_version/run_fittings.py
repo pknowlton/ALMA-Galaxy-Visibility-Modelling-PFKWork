@@ -214,7 +214,7 @@ def main(paramfile, fitType, ranges, guesses, productname):
     productname: string, indicating what base filename to use when generating various products. 
     """
     #Set up the logger
-    logging.basicConfig(filename=productname+'.log', filemode='w', level=logging.INFO)
+    logging.basicConfig(filename=productname+'.log', filemode='w', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
     logging.info(paramfile)
     logging.info(fitType)
