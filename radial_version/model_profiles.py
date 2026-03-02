@@ -1,7 +1,6 @@
 import numpy as np
 import logging
-
-### running list of model profiles
+from galario.double import get_image_size, chi2Profile, deg, arcsec
 
 def radial_gaussian_ring(pars, args):
 
@@ -50,6 +49,8 @@ def model_init(fittype):
     if fittype == 'gaussring':
         model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0]
         model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5]]
+        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars')
+        logging.info('start, step, numsteps, nxy, dxy, u, v, re, im, w = args')
 
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')

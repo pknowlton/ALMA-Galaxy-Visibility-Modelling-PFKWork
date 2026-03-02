@@ -42,7 +42,7 @@ args = ' '.join(arglist)
 
 session = Session()
 session_id = session.create(
-    name="runmcmctest1",
+    name="runmcmctest5",
     image=image,
     cores=cores,
     ram=mem,
