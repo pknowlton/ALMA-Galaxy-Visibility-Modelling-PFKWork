@@ -117,7 +117,7 @@ def save_results_hdf(fittype, outname, chainname):
     logging.info('Successfully saved the paths plot...')
 
     #corner plot
-    flat_samples = reader.get_chain(discard=200, flat=True)
+    flat_samples = reader.get_chain(discard=0, flat=True)
     try:
         fig = corner.corner(flat_samples, labels=label,
                     show_titles=True, quantiles=[0.16, 0.50, 0.84],
@@ -133,7 +133,7 @@ def save_results_hdf(fittype, outname, chainname):
 def main():
 
     #well get rid of this soon
-    productname = '/arc/home/pknowlton/uv_product_dir/test7/gaussing_test7_20000'
+    productname = '/arc/home/pknowlton/uv_product_dir/test6/gaussing_test6_short_pool1'
 
     #Set up the logger
     logging.basicConfig(filename=productname+'.log', filemode='w', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
@@ -179,7 +179,7 @@ def main():
     backend.reset(nwalkers, ndim)
     logging.info('Chain: %s', chain)
 
-    max_n = 20000
+    max_n = 15
 
     # We'll track how the average autocorrelation time estimate changes
     index = 0
@@ -190,7 +190,7 @@ def main():
 
     logging.info('Beginning emcee run...')
 
-    with Pool(8) as pool:
+    with Pool(1) as pool:
 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, args=(args, fittype, ranges), backend=backend, pool=pool)
         
@@ -198,20 +198,20 @@ def main():
         fit_start=time.time()
 
         for sample in sampler.sample(pos, iterations=max_n, progress=False, skip_initial_state_check=True):
-            # Only check convergence every 100 steps
-            if sampler.iteration % 100:
+            # Only check convergence every 1 steps
+            if sampler.iteration % 1:
                 continue
 
 		    # Compute the autocorrelation time so far
 		    # Using tol=0 means that we'll always get an estimate even
 		    # if it isn't trustworthy
-            tau = sampler.get_autocorr_time(tol=0, quiet=True, thin=10) #should make getting autocorr easier
+            tau = sampler.get_autocorr_time(tol=0, quiet=True, thin=1)
             mean_tau = np.mean(tau)
             autocorr[index] = mean_tau
             index += 1
 
             conv_ratio = sampler.iteration / mean_tau if mean_tau > 0 else 0
-            logging.info(f"Iteration {sampler.iteration}/{max_n} | Mean Tau: {mean_tau:.2f} | Conv Ratio: {conv_ratio:.1f}/50")
+            logging.info(f"Iteration {sampler.iteration}/{max_n} | Mean Tau: {mean_tau:.2f} | Conv Ratio: {conv_ratio:.1f}/100")
 
             # Check convergence
             converged = np.all(tau * 50 < sampler.iteration) #trying 50 for now
