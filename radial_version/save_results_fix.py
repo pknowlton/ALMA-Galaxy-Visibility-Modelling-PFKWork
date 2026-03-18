@@ -75,7 +75,7 @@ def save_results_hdf(fittype, outname, chainname):
     print('saved paths plot')
 
     #corner plot
-    flat_samples = reader.get_chain(discard=150, flat=True)
+    flat_samples = reader.get_chain(discard=200, flat=True)
     try:
         fig = corner.corner(flat_samples, labels=label,
                     show_titles=True, quantiles=[0.16, 0.50, 0.84],
@@ -91,7 +91,7 @@ def main():
 
     #well get rid of this soon
     print('running')
-    productname = '/arc/home/pknowlton/uv_product_dir/test4/gaussing_test4_full'
+    productname = '/arc/home/pknowlton/uv_product_dir/test7/gaussing_test7_20000'
     chain = productname+'_chain.hdf5'
     fittype='gaussring'
 

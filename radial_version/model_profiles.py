@@ -4,6 +4,23 @@ from galario.double import get_image_size, chi2Profile, deg, arcsec
 
 def radial_gaussian_ring(pars, args):
 
+    """
+    Calculates chi-squared for a Gaussian ring intensity profile.
+
+    Converts input parameters from log-space and angular units (arcsec/deg) 
+    to linear space and radians for the visibility-plane calculation.
+
+    Args:
+        pars (np.ndarray):1D array of model parameters to be sampled.
+            [peak (log(Jy/sr)), sigma (arcsec), ring_rad (arcsec), 
+             inc (deg), PA (deg), dRA (arcsec), dDec (arcsec)]
+        args (tuple): Fixed data and constants required for the model.
+            (start, step, numsteps, nxy, dxy, u, v, re, im, w)
+
+    Returns:
+        float: The chi-squared value calculated via chi2Profile from GALARIO.
+    """
+
     peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars
     start, step, numsteps, nxy, dxy, u, v, re, im, w = args
 
@@ -36,6 +53,18 @@ def radial_gaussian_ring(pars, args):
 
 def model_prof(pars, args, fittype):
 
+    """
+    Routes the parameter evaluation to the appropriate physical model profile.
+
+    Args:
+        pars (np.ndarray): 1D array of model parameters to be sampled.
+        args (tuple): Fixed data and constants required for the model.
+        fittype (str): The model configuration identifier.
+
+    Returns:
+        float: The chi-squared value for the selected model.
+    """
+
     if fittype == 'gaussring':
         chi2 = radial_gaussian_ring(pars, args)
 
@@ -45,6 +74,18 @@ def model_prof(pars, args, fittype):
     return chi2
 
 def model_init(fittype):
+
+    """
+    Provides starting positions and prior boundaries for a specified model.
+
+    Args:
+        fittype (str): The model configuration identifier.
+
+    Returns:
+        tuple: A 2-element tuple containing:
+            - init_guess (list[float]): The initial guess starting values for walkers.
+            - model_fits_ranges (list[list[float]]): The [min, max] prior bounds.
+    """
 
     if fittype == 'gaussring':
         model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0]
