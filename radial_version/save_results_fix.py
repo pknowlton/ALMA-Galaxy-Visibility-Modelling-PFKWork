@@ -91,7 +91,7 @@ def main():
 
     #well get rid of this soon
     print('running')
-    productname = '/arc/home/pknowlton/uv_product_dir/test7/gaussing_test7_20000'
+    productname = '/arc/home/pknowlton/uv_product_dir/test_cpu_work/gaussing-test-cpu-work-01'
     chain = productname+'_chain.hdf5'
     fittype='gaussring'
 

@@ -1,3 +1,11 @@
+import multiprocessing
+
+# 1. THE MASTER KEY: Force Fork before anything else happens
+try:
+    multiprocessing.set_start_method('fork', force=True)
+except RuntimeError:
+    pass
+
 import os
 import sys
 import ast
@@ -17,7 +25,7 @@ from astropy.units import Quantity
 from astropy.coordinates import SkyCoord
 from galario.double import get_image_size, chi2Profile, deg, arcsec
 
-from model_profiles import model_init, model_prof
+from model_profiles_vglo import model_init, model_prof
 
 #Matplotlib used by corner, but TeX issue is causing crashes. Force usetex=False
 from matplotlib import pyplot as plt
@@ -65,7 +73,10 @@ def log_likelihood(pars, args, fittype):
         float: The log-likelihood value, calculated as -0.5 * chi_squared.
     """
 
-    chi2 = model_prof(pars, args, fittype)
+    global GLOBAL_DATA # Add this line to be safe
+    vis_data = GLOBAL_DATA
+
+    chi2 = model_prof(pars, args, vis_data, fittype)
 
     return -0.5 * chi2
 
@@ -117,7 +128,7 @@ def initialize_data(param_file):
                     pvalue = np.array(pvalue, dtype=float)
                 params[pkey] = pvalue
 
-    logging.info(f"Parameter File Contents: {params}")
+    #logging.info(f"Parameter File Contents: {params}")
 
     u, v, re, im, w = np.require(np.loadtxt(params['visFile'], unpack=True), requirements='C')
     wavelength = 299792458/params['obsFreq']
@@ -126,7 +137,10 @@ def initialize_data(param_file):
 
     nx, dx = get_image_size(u, v)
 
-    return params['radiusStart'], params['radiusStep'], params['radiusNumSteps'], nx, dx, u, v, re, im, w
+    args = (params['radiusStart'], params['radiusStep'], params['radiusNumSteps'], nx, dx)
+    vis_data = (u, v, re, im, w)
+
+    return args, vis_data
 
 def log_resource_usage(label=""):
     parent = psutil.Process(os.getpid())
@@ -186,7 +200,7 @@ def save_results_hdf(fittype, outname, chainname):
     logging.info('Successfully saved the paths plot...')
 
     #corner plot
-    flat_samples = reader.get_chain(discard=0, flat=True)
+    flat_samples = reader.get_chain(discard=200, flat=True)
     try:
         fig = corner.corner(flat_samples, labels=label,
                     show_titles=True, quantiles=[0.16, 0.50, 0.84],
@@ -197,7 +211,10 @@ def save_results_hdf(fittype, outname, chainname):
         #Most likely a TeX error, so we want the extra info
         logging.error('Something went wrong in the creation of the corner plot. Moving on...', exc_info=True)
 #eventually this will be moved to its own plot visualization script
-    
+
+PARAM_FILE = "/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/radial_version/gaussring_fitting_params.txt" 
+args, GLOBAL_DATA = initialize_data(PARAM_FILE)
+#global variable where we will store our visibility data, this should help the code run faster
 
 def main():
     """
@@ -223,7 +240,7 @@ def main():
     filepath = pargs.file_path
 
     #set up logger and psutil tracker
-    logging.basicConfig(filename=outpath+'.log', filemode='w', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    logging.basicConfig(filename=outpath+'.log', filemode='a', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S', force=True)
     psutil.cpu_percent(interval=None)
 
     run_name = outpath.split('/')[-1]
@@ -239,9 +256,10 @@ def main():
     logging.info('Output Files: %s', outpath)
 
     #get the args
-    args = initialize_data(param_file)
-    logging.info('Initializing parameter file and defining args...')
-    log_resource_usage("Initialize Data")
+    #args, vis_data = initialize_data(param_file)
+    logging.info('Initializing parameter file and data...(except not this time)')
+
+    #log_resource_usage("Initialize Data")
 
     #get ranges and guesses
     init_guess, ranges = model_init(fittype)
@@ -267,8 +285,20 @@ def main():
 
     chain = outpath+'_chain.hdf5'
     backend = emcee.backends.HDFBackend(chain)
-    backend.reset(nwalkers, ndim)
-    logging.info('Chain: %s', chain)
+
+    if os.path.exists(chain) and backend.iteration > 0:
+        # Resume mode
+        pos = backend.get_last_sample().coords 
+        logging.info(f"Resuming from iteration {backend.iteration}")
+        logging.info(f"Last sample shape: {pos.shape}") # Should be (32, ndim)
+    else:
+        # Fresh start mode
+        backend.reset(nwalkers, ndim)
+        # 'pos' remains the array of initial guesses you generated above
+        logging.info(f"Starting fresh run. Chain: {chain}")
+
+    #backend.reset(nwalkers, ndim)
+    #logging.info('Chain: %s', chain)
 
     max_n = 20000
 
@@ -285,20 +315,24 @@ def main():
     with Pool(8) as pool:
 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, args=(args, fittype, ranges), backend=backend, pool=pool)
+
+        steps_to_run = max_n - backend.iteration
+        logging.info(f"Running {steps_to_run} steps to reach total of {max_n}...")
         
         logging.info('Beginning the fitting run...')
         fit_start=time.time()
 
-        for sample in sampler.sample(pos, iterations=max_n, progress=False, skip_initial_state_check=True):
+        for sample in sampler.sample(pos, iterations=steps_to_run, progress=False, skip_initial_state_check=True):
             # Only check convergence every 100 steps
             if sampler.iteration % 100 != 0 and sampler.iteration != max_n:
                 continue
 
+		    # Record usage NOW while the pool is active and crunching numbers
             cpu = psutil.cpu_percent(interval=0.1) # interval=0.1 gives a real 'live' reading
             ram = psutil.Process().memory_info().rss / 1024 / 1024
             logging.info(f"LIVE RESOURCE USAGE - Iteration {sampler.iteration} - CPU: {cpu}% | RAM: {ram:.2f} MB")
-
-		    # Compute the autocorrelation time so far
+            
+            # Compute the autocorrelation time so far
 		    # Using tol=0 means that we'll always get an estimate even
 		    # if it isn't trustworthy
             tau = sampler.get_autocorr_time(tol=0, quiet=True, thin=10) #should make getting autocorr easier
@@ -307,8 +341,8 @@ def main():
             index += 1
 
             conv_ratio = sampler.iteration / mean_tau if mean_tau > 0 else 0
-            conv_ratio_all = sampler.iteration / tau if mean_tau > 0 else 0
-            tau_diff = (old_tau - tau) / tau
+            conv_ratio_all = sampler.iteration / tau if np.all(tau > 0) else np.zeros_like(tau)
+            tau_diff = (old_tau - tau) / tau if np.all(tau > 0) else np.zeros_like(tau)
 
             logging.info(f"Iteration {sampler.iteration}/{max_n} | Mean Tau: {mean_tau:.2f} | Mean Conv Ratio: {conv_ratio:.1f}/50")
             ratios_str = ", ".join([f"{r:.1f}" for r in conv_ratio_all])
