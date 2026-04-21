@@ -23,9 +23,9 @@ from astropy import units as u
 from multiprocessing import Pool
 from astropy.units import Quantity
 from astropy.coordinates import SkyCoord
-from galario.double import get_image_size, chi2Profile, deg, arcsec
+from galario.double import get_image_size, chi2Profile, deg, arcsec, chi2Image
 
-from model_profiles_vglo import model_init, model_prof
+from model_profiles_v3 import model_init, model_prof
 
 #Matplotlib used by corner, but TeX issue is causing crashes. Force usetex=False
 from matplotlib import pyplot as plt
@@ -173,6 +173,9 @@ def save_results_hdf(fittype, outname, chainname):
     if fittype=='gaussring':
         #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
         label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
+    elif fittype=='twodgaussring':
+        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
+        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
     elif fittype=='jinc':
         #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
         label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec"]
@@ -231,7 +234,7 @@ def main():
 
     parser=argparse.ArgumentParser()
     parser.add_argument("-op", "--outpath", default="", type=str, help="Path to product directory, corresponds with CANFAR name")
-    parser.add_argument("fittype", choices=["gaussring"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
+    parser.add_argument("fittype", choices=["gaussring", "twodgaussring"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
     parser.add_argument("-fp", "--file_path", default="", type=str, help="Path to param file if it is not in the same directory")
     pargs=parser.parse_args()
 
@@ -312,7 +315,7 @@ def main():
     logging.info('Beginning emcee run...')
     log_resource_usage("Pre-Pool")
 
-    with Pool(8) as pool:
+    with Pool(16) as pool:
 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, args=(args, fittype, ranges), backend=backend, pool=pool)
 

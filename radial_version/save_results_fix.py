@@ -16,7 +16,7 @@ from astropy.units import Quantity
 from astropy.coordinates import SkyCoord
 from galario.double import get_image_size, chi2Profile, deg, arcsec
 
-from model_profiles import model_init, model_prof
+from model_profiles_v3 import model_init, model_prof
 
 #Matplotlib used by corner, but TeX issue is causing crashes. Force usetex=False
 from matplotlib import pyplot as plt
@@ -45,6 +45,10 @@ def save_results_hdf(fittype, outname, chainname):
         #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
         label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
         print('gaussring')
+    elif fittype=='twodgaussring':
+        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
+        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
+        print('twodgaussring')
     elif fittype=='jinc':
         #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
         label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec"]
@@ -91,9 +95,9 @@ def main():
 
     #well get rid of this soon
     print('running')
-    productname = '/arc/home/pknowlton/uv_product_dir/test_cpu_work/gaussing-test-cpu-work-01'
-    chain = productname+'_chain.hdf5'
-    fittype='gaussring'
+    productname = '/arc/home/pknowlton/uv_product_dir_new/test_v3/gaussing-2d'
+    chain = productname+'_chain_copy.hdf5'
+    fittype='twodgaussring'
 
     save_results_hdf(fittype, productname, chain)
     print('done!')

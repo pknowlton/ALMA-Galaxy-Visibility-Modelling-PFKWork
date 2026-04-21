@@ -1,0 +1,163 @@
+import numpy as np
+import logging
+from galario.double import get_image_size, chi2Profile, deg, arcsec, chi2Image
+
+#########################
+### Radial Gaussian Ring
+#########################
+
+def radial_gaussian_ring(pars, args, vis_data):
+
+    """
+    Calculates chi-squared for a Gaussian ring intensity profile.
+
+    Converts input parameters from log-space and angular units (arcsec/deg) 
+    to linear space and radians for the visibility-plane calculation.
+
+    Args:
+        pars (np.ndarray):1D array of model parameters to be sampled.
+            [peak (log(Jy/sr)), sigma (arcsec), ring_rad (arcsec), 
+             inc (deg), PA (deg), dRA (arcsec), dDec (arcsec)]
+        args (tuple): Fixed data and constants required for the model.
+            (start, step, numsteps, nxy, dxy, u, v, re, im, w)
+
+    Returns:
+        float: The chi-squared value calculated via chi2Profile from GALARIO.
+    """
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert from log to real space
+    peak = 10**peak   
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+    start *= arcsec
+    step *= arcsec
+
+    inclination *= deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    #define gaussian profile
+    radius = np.linspace(start, start + numsteps*step, numsteps)
+
+    rad_prof = peak*np.exp((-1/2)*((radius-ring_rad)/sigma)**2)
+
+    #compute the chi-square of the model
+    chi2 = chi2Profile(rad_prof, start, step, nxy, dxy, u, v, re, im, w, inc=inclination, PA=posangle, dRA=dRA, dDec=dDec)
+
+    return chi2
+
+#########################
+### 2D Gaussian Ring
+#########################
+
+def gauss_ring(peak_ring, sigma_ring, rad_ring, radius, dxy):
+    return 10**peak_ring * np.exp((-1/2)*((radius-rad_ring)/sigma_ring)**2) * (dxy**2)
+
+def add_ring(xx, yy, peak, sigma, rad, inc, dxy):
+    #xx and yy should be meshgrid objects? That represent the plane on which the model will be evaluated
+    #apply PA and inc rotations for the ring
+    #xpa = xx*np.cos(pa) + yy*np.sin(pa)
+    #ypa = -xx*np.sin(pa) + yy*np.cos(pa)
+    xinc = xx/np.cos(inc)
+
+    #make a radius vector, evaluate the ring model
+    radius_vec = np.hypot(xinc, yy)
+    ring_model = gauss_ring(peak, sigma, rad, radius_vec, dxy)
+    return ring_model
+
+def gaussring_noblob(peak_r, sigma_r, rad_r, inc_r, npix, pixscale):
+    #Initialize the image plane
+    image_size = npix * pixscale
+    x = np.linspace(-image_size/2, image_size/2, npix)
+    y = np.linspace(-image_size/2, image_size/2, npix)
+    xx, yy = np.meshgrid(x, y)
+
+    ring_model = add_ring(xx, yy, peak_r, sigma_r, rad_r, inc_r, pixscale)
+    return ring_model
+
+def twod_gaussian_ring(pars, args, vis_data):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+
+    inclination *= deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    model_img = gaussring_noblob(peak, sigma, ring_rad, inclination, nxy, dxy) 
+    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+
+    return chi2
+
+###
+
+def model_prof(pars, args, vis_data, fittype):
+
+    """
+    Routes the parameter evaluation to the appropriate physical model profile.
+
+    Args:
+        pars (np.ndarray): 1D array of model parameters to be sampled.
+        args (tuple): Fixed data and constants required for the model.
+        fittype (str): The model configuration identifier.
+
+    Returns:
+        float: The chi-squared value for the selected model.
+    """
+
+    if fittype == 'gaussring':
+        chi2 = radial_gaussian_ring(pars, args, vis_data)
+
+    elif fittype == 'twodgaussring':
+        chi2 = twod_gaussian_ring(pars, args, vis_data)
+
+    else:
+        logging.warning('Please choose a valid fitting model, or add a new one into the code.')
+
+    return chi2
+
+def model_init(fittype):
+
+    """
+    Provides starting positions and prior boundaries for a specified model.
+
+    Args:
+        fittype (str): The model configuration identifier.
+
+    Returns:
+        tuple: A 2-element tuple containing:
+            - init_guess (list[float]): The initial guess starting values for walkers.
+            - model_fits_ranges (list[list[float]]): The [min, max] prior bounds.
+    """
+
+    if fittype == 'gaussring':
+        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0]
+        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5]]
+        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars')
+        logging.info('start, step, numsteps, nxy, dxy, u, v, re, im, w = args')
+
+    elif fittype == 'twodgaussring':
+        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0]
+        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5]]
+        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars')
+        logging.info('start, step, numsteps, nxy, dxy, u, v, re, im, w = args')
+
+    else:
+        logging.warning('Please choose a valid fitting model, or add a new one into the code.')
+
+    return model_fits_initial_guesses, model_fits_ranges
