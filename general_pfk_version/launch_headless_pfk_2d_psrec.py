@@ -33,18 +33,19 @@ import pandas as pd
 from canfar.sessions import Session
 
 #set up arglist for cmd
-outpath = '/arc/home/pknowlton/uv_product_dir_new/test_pfk/gaussing-2d-16c-pfk'
+outpath = '/arc/home/pknowlton/uv_product_dir_new/test_cpu/gaussing-2d-flex-pfk'
 fittype = 'twodgaussring'
 filepath = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/general_pfk_version'
 
 #set the session computing parameters
-cores=16
+cores=None
 mem=None
 name = outpath.split('/')[-1] if outpath else "mcmc-run-000"
 image='images.canfar.net/skaha/astroml:latest'
-cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/general_pfk_version/launch_fittings_pfk.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
-arglist = ['-op', outpath, fittype,'-fp', filepath]
-args = ' '.join(arglist)
+cmd_mcmc = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/general_pfk_version/launch_fittings_pfk_psrec.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
+
+cmd = 'psrecord'
+args = f'{cmd_mcmc} --log {outpath}_datetime.txt --include-children --plot {outpath}_datetime.png --interval 60'
 
 session = Session()
 session_id = session.create(

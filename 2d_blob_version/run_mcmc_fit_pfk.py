@@ -176,9 +176,12 @@ def save_results_hdf(fittype, outname, chainname):
     elif fittype=='twodgaussring':
         #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
         label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='jinc':
+    elif fittype=='twodgaussring_blob':
         #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec"]
+        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B. Peak", "B. Width", "Dist", "Angle"]
+    elif fittype=='fixring_blob':
+        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
+        label = ["B. Peak", "B. Width", "Dist", "Angle"]
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
         return None
@@ -234,7 +237,7 @@ def main():
 
     parser=argparse.ArgumentParser()
     parser.add_argument("-op", "--outpath", default="", type=str, help="Path to product directory, corresponds with CANFAR name")
-    parser.add_argument("fittype", choices=["gaussring", "twodgaussring"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
+    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
     parser.add_argument("-fp", "--file_path", default="", type=str, help="Path to param file if it is not in the same directory")
     pargs=parser.parse_args()
 

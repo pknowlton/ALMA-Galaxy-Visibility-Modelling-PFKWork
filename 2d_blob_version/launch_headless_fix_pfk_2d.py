@@ -33,16 +33,16 @@ import pandas as pd
 from canfar.sessions import Session
 
 #set up arglist for cmd
-outpath = '/arc/home/pknowlton/uv_product_dir_new/test_pfk/gaussing-2d-16c-pfk'
-fittype = 'twodgaussring'
-filepath = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/general_pfk_version'
+outpath = '/arc/home/pknowlton/uv_product_dir_new/test_blob/blob-2d-fixring'
+fittype = 'fixring_blob'
+filepath = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/2d_blob_version'
 
 #set the session computing parameters
-cores=16
+cores=None
 mem=None
 name = outpath.split('/')[-1] if outpath else "mcmc-run-000"
 image='images.canfar.net/skaha/astroml:latest'
-cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/general_pfk_version/launch_fittings_pfk.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
+cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/2d_blob_version/launch_fittings_pfk.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
 arglist = ['-op', outpath, fittype,'-fp', filepath]
 args = ' '.join(arglist)
 
