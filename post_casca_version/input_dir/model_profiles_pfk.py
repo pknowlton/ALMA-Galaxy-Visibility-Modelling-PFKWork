@@ -302,8 +302,8 @@ def model_init(fittype):
         logging.info('u, v, re, im, w = vis_data')
 
     elif fittype == 'twodgaussring_blob':
-        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 7, 210]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [-5, 15], [0, 10], [0, 20], [195,250]]
+        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 7, 15]
+        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [-5, 15], [0, 10], [0, 20], [0,90]]
         logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b, sigma_b, distance, angle = pars')
         logging.info('start, step, numsteps, nxy, dxy = args')
         logging.info('u, v, re, im, w = vis_data')

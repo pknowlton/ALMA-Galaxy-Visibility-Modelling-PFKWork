@@ -62,11 +62,6 @@ def log_prior(pars, ranges, fittype):
 
     if np.any((pars <= ranges[:, 0]) | (pars >= ranges[:, 1])):
         return -np.inf
-
-    if fittype == 'twodring_2blob_ne':
-        if pars[10] > pars[14] or pars[9] < pars[13]:
-            return -np.inf
-    
     return 0.0
 
 def log_likelihood(pars, args, fittype):

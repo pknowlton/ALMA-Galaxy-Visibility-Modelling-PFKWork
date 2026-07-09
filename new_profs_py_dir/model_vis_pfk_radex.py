@@ -1,12 +1,47 @@
 import numpy as np
 import logging
-from galario.double import get_image_size, chi2Profile, deg, arcsec, chi2Image
+from galario.double import get_image_size, chi2Profile, deg, arcsec, chi2Image, sampleProfile, sampleImage
+
+#########################
+### 1 blob (RA DEC) - dRA, dDec, PA = 0
+#########################
+
+def gaussblob(peak, sigma, xx, yy, xoff, yoff, dxy):
+    return 10**peak * np.exp((-1/2) * (((xx-xoff)/sigma)**2 + ((yy-yoff)/sigma)**2)) * (dxy**2)
+
+def justblob_model_off(peak_b, sigma_b, rao, deco, nxy, dxy):
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+    
+    blob_model = gaussblob(peak_b, sigma_b, xx, yy, -rao, deco, dxy)
+    
+    return blob_model
+
+def twod_justblob_off_vis(pars, args, vis_data):
+
+    peak_b, sigma_b, rao, deco = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma_b *= arcsec
+    
+    rao *= arcsec
+    deco *=arcsec
+
+    model_img = justblob_model_off(peak_b, sigma_b, rao, deco, nxy, dxy) 
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, re, im, w, dRA=0, dDec=0, PA=0, origin='lower'), dtype=np.complex256)
+    
+    return model_vis
 
 #########################
 ### Radial Gaussian Ring
 #########################
 
-def radial_gaussian_ring(pars, args, vis_data):
+def radial_gaussian_ring_vis(pars, args, vis_data):
 
     """
     Calculates chi-squared for a Gaussian ring intensity profile.
@@ -49,10 +84,10 @@ def radial_gaussian_ring(pars, args, vis_data):
 
     rad_prof = peak*np.exp((-1/2)*((radius-ring_rad)/sigma)**2)
 
-    #compute the chi-square of the model
-    chi2 = chi2Profile(rad_prof, start, step, nxy, dxy, u, v, re, im, w, inc=inclination, PA=posangle, dRA=dRA, dDec=dDec)
+    #compute the model vis of the model
+    model_vis = np.array(sampleProfile(rad_prof, start, step, nxy, dxy, u, v, re, im, w, inc=inclination, PA=posangle, dRA=dRA, dDec=dDec), dtype=np.complex256)
 
-    return chi2
+    return model_vis
 
 #########################
 ### 2D Gaussian Ring
@@ -75,7 +110,7 @@ def gaussring_model(peak, sigma, rad, inc, nxy, dxy):
     
     return ring_model
 
-def twod_gaussring(pars, args, vis_data):
+def twod_gaussring_vis(pars, args, vis_data):
 
     peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars
     start, step, numsteps, nxy, dxy = args
@@ -92,9 +127,9 @@ def twod_gaussring(pars, args, vis_data):
     dDec *= arcsec
 
     model_img = gaussring_model(peak, sigma, ring_rad, inclination, nxy, dxy) 
-    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
 
-    return chi2
+    return model_vis
 
 #########################
 ### 2D Gaussian Ring + 1 blob
@@ -123,7 +158,7 @@ def gaussring_1blob_model(peak, sigma, rad, inc, peak_b, sigma_b, dist, ang, nxy
     
     return ring_model + blob_model
 
-def twod_gaussring_1blob(pars, args, vis_data):
+def twod_gaussring_1blob_vis(pars, args, vis_data):
 
     peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b, sigma_b, dist, ang = pars
     start, step, numsteps, nxy, dxy = args
@@ -145,15 +180,15 @@ def twod_gaussring_1blob(pars, args, vis_data):
     ang *= deg
 
     model_img = gaussring_1blob_model(peak, sigma, ring_rad, inclination, peak_b, sigma_b, dist, ang, nxy, dxy) 
-    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
 
-    return chi2
+    return model_vis
 
 #########################
 ### Fixed 2D Gaussian Ring + 1 blob
 #########################
 
-def twod_fixring_1blob(pars, args, vis_data):
+def twod_fixring_1blob_vis(pars, args, vis_data):
 
     peak_b, sigma_b, dist, ang = pars
     start, step, numsteps, nxy, dxy = args
@@ -175,9 +210,9 @@ def twod_fixring_1blob(pars, args, vis_data):
     ang *= deg
 
     model_img = gaussring_1blob_model(6.54, sigma, ring_rad, inclination, peak_b, sigma_b, dist, ang, nxy, dxy) 
-    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
 
-    return chi2
+    return model_vis
 
 #########################
 ### 2D Gaussian Ring + 2 blob in NE region
@@ -208,7 +243,7 @@ def gaussring_2blob_model(peak, sigma, rad, inc, peak_b1, sigma_b1, dist1, ang1,
     
     return ring_model + blob1_model + blob2_model
 
-def twod_gaussring_2blob(pars, args, vis_data):
+def twod_gaussring_2blob_vis(pars, args, vis_data):
 
     peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist1, ang1, peak_b2, sigma_b2, dist2, ang2 = pars
     start, step, numsteps, nxy, dxy = args
@@ -233,13 +268,13 @@ def twod_gaussring_2blob(pars, args, vis_data):
     ang2 *= deg
 
     model_img = gaussring_2blob_model(peak, sigma, ring_rad, inclination, peak_b1, sigma_b1, dist1, ang1, peak_b2, sigma_b2, dist2, ang2, nxy, dxy)
-    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
 
-    return chi2
+    return model_vis
 
-###
+##################################################################################################################
 
-def model_prof(pars, args, vis_data, fittype):
+def model_visibility(pars, args, vis_data, fittype):
 
     """
     Routes the parameter evaluation to the appropriate physical model profile.
@@ -254,97 +289,27 @@ def model_prof(pars, args, vis_data, fittype):
     """
 
     if fittype == 'gaussring':
-        chi2 = radial_gaussian_ring(pars, args, vis_data)
+        model_vis = radial_gaussian_ring_vis(pars, args, vis_data)
 
     elif fittype == 'twodgaussring':
-        chi2 = twod_gaussring(pars, args, vis_data)
+        model_vis = twod_gaussring_vis(pars, args, vis_data)
 
     elif fittype == 'twodgaussring_blob':
-        chi2 = twod_gaussring_1blob(pars, args, vis_data)
+        model_vis = twod_gaussring_1blob_vis(pars, args, vis_data)
 
     elif fittype == 'fixring_blob':
-        chi2 = twod_fixring_1blob(pars, args, vis_data)
+        model_vis = twod_fixring_1blob_vis(pars, args, vis_data)
 
     elif fittype == 'twodring_2blob_ne':
-        chi2 = twod_gaussring_2blob(pars, args, vis_data)
+        model_vis = twod_gaussring_2blob_vis(pars, args, vis_data)
+
+    elif fittype == 'blob_radex15':
+        model_vis = twod_justblob_off_vis(pars, args, vis_data)
+
+    elif fittype == 'blob_radex6':
+        model_vis = twod_justblob_off_vis(pars, args, vis_data)
 
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
 
-    return chi2
-
-def model_init(fittype):
-
-    """
-    Provides starting positions and prior boundaries for a specified model.
-
-    Args:
-        fittype (str): The model configuration identifier.
-
-    Returns:
-        tuple: A 2-element tuple containing:
-            - init_guess (list[float]): The initial guess starting values for walkers.
-            - model_fits_ranges (list[list[float]]): The [min, max] prior bounds.
-    """
-
-    if fittype == 'gaussring':
-        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5]]
-        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars')
-        logging.info('start, step, numsteps, nxy, dxy = args')
-        logging.info('u, v, re, im, w = vis_data')
-
-    elif fittype == 'twodgaussring':
-        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5]]
-        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec = pars')
-        logging.info('start, step, numsteps, nxy, dxy = args')
-        logging.info('u, v, re, im, w = vis_data')
-
-    elif fittype == 'twodgaussring_blob':
-        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 7, 210]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [-5, 15], [0, 10], [0, 20], [195,250]]
-        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b, sigma_b, distance, angle = pars')
-        logging.info('start, step, numsteps, nxy, dxy = args')
-        logging.info('u, v, re, im, w = vis_data')
-
-    elif fittype == 'fixring_blob':
-        model_fits_initial_guesses = [6, 1, 7, 15]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0,90]]
-        logging.info('peak_b, sigma_b, distance, angle = pars')
-        logging.info('start, step, numsteps, nxy, dxy = args')
-        logging.info('u, v, re, im, w = vis_data')
-
-    elif fittype == 'twodring_2blob_ne':
-        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 8, 15, 6, 1, 7, 20]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [5, 10], [0, 2], [5, 10], [0,90], [5, 10], [0, 2], [5, 10], [0,90]]
-        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, distance1, angle1, peak_b2, sigma_b2, distance2, angle2 = pars')
-        logging.info('start, step, numsteps, nxy, dxy = args')
-        logging.info('u, v, re, im, w = vis_data')
-
-    else:
-        logging.warning('Please choose a valid fitting model, or add a new one into the code.')
-
-    return model_fits_initial_guesses, model_fits_ranges
-
-def model_label(fittype):
-
-    if fittype=='gaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B. Peak", "B. Width", "Dist", "Angle"]
-    elif fittype=='fixring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["B. Peak", "B. Width", "Dist", "Angle"]
-    elif fittype=='twodring_2blob_ne':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B1. Peak", "B1. Width", "Dist1", "Angle1", "B2. Peak", "B2. Width", "Dist2", "Angle2"]
-    else:
-        logging.warning('Please choose a valid fitting model, or add a new one into the code.')
-    
-    return label
+    return model_vis

@@ -34,12 +34,12 @@ from canfar.sessions import Session
 
 #set up arglist for cmd
 in_dir = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/send2scratch_version/input_dir'
-out_dir = '/arc/home/pknowlton/uv_product_dir_new/test_scratch/scratch-gaussring'
+out_dir = '/arc/home/pknowlton/uv_product_dir_new/test_scratch/twod-ringblob15'
 data_path = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable.txt'
-fittype = 'gaussring'
+fittype = 'twodgaussring_blob'
 
 #set the session computing parameters
-cores=None
+cores=16
 mem=None
 name = out_dir.split('/')[-1] if out_dir else "mcmc-run-000"
 image='images.canfar.net/skaha/astroml:latest'

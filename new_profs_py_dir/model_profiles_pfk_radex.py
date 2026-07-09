@@ -1,6 +1,66 @@
 import numpy as np
 import logging
 from galario.double import get_image_size, chi2Profile, deg, arcsec, chi2Image
+import pandas as pd
+
+#########################
+### 1 blob (RA DEC) - dRA, dDec, PA = 0
+#########################
+
+def cal_offset(ymc_ra, ymc_dec, mode):
+
+    m95_ra = (10+43/60+57.73/3600)*15
+    m95_dec = 11+42/60+13.3/3600
+
+    pc_ra = (10+43/60+57.7330/3600)*15
+    pc_dec = 11+42/60+12.9996/3600
+
+    if mode == 'm95':
+        ref_ra = m95_ra
+        ref_dec = m95_dec
+    elif mode == "phc":
+        ref_ra = pc_ra
+        ref_dec = pc_dec
+    else:
+        print('Pick m95 or phc')
+    ###    
+    dec_mid = (ymc_dec + ref_dec)/2
+    ra_off = (ymc_ra - ref_ra) * np.cos(np.deg2rad(ref_dec)) * 3600
+
+    dec_off = (ymc_dec - ref_dec) * 3600
+
+    return ra_off, dec_off
+
+def gaussblob(peak, sigma, xx, yy, xoff, yoff, dxy):
+    return 10**peak * np.exp((-1/2) * (((xx-xoff)/sigma)**2 + ((yy-yoff)/sigma)**2)) * (dxy**2)
+
+def justblob_model_off(peak_b, sigma_b, rao, deco, nxy, dxy):
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+    
+    blob_model = gaussblob(peak_b, sigma_b, xx, yy, -rao, deco, dxy)
+    
+    return blob_model
+
+def twod_justblob_off(pars, args, vis_data):
+
+    peak_b, sigma_b, rao, deco = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma_b *= arcsec
+    
+    rao *= arcsec
+    deco *=arcsec
+
+    model_img = justblob_model_off(peak_b, sigma_b, rao, deco, nxy, dxy) 
+    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=0, dDec=0, PA=0, origin='lower')
+    
+    return chi2
 
 #########################
 ### Radial Gaussian Ring
@@ -237,7 +297,7 @@ def twod_gaussring_2blob(pars, args, vis_data):
 
     return chi2
 
-###
+##################################################################################################################
 
 def model_prof(pars, args, vis_data, fittype):
 
@@ -267,6 +327,12 @@ def model_prof(pars, args, vis_data, fittype):
 
     elif fittype == 'twodring_2blob_ne':
         chi2 = twod_gaussring_2blob(pars, args, vis_data)
+
+    elif fittype == 'blob_radex15':
+        chi2 = twod_justblob_off(pars, args, vis_data)
+
+    elif fittype == 'blob_radex6':
+        chi2 = twod_justblob_off(pars, args, vis_data)
 
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
@@ -302,8 +368,8 @@ def model_init(fittype):
         logging.info('u, v, re, im, w = vis_data')
 
     elif fittype == 'twodgaussring_blob':
-        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 7, 210]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [-5, 15], [0, 10], [0, 20], [195,250]]
+        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 7, 15]
+        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [-5, 15], [0, 10], [0, 20], [0,90]]
         logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b, sigma_b, distance, angle = pars')
         logging.info('start, step, numsteps, nxy, dxy = args')
         logging.info('u, v, re, im, w = vis_data')
@@ -322,29 +388,39 @@ def model_init(fittype):
         logging.info('start, step, numsteps, nxy, dxy = args')
         logging.info('u, v, re, im, w = vis_data')
 
+    elif fittype == 'blob_radex15':
+
+        # Load the CSV file into a DataFrame
+        df = pd.read_csv('ymc_prior_full_err.csv')
+
+        ra_off, dec_off = cal_offset(df['ra (deg)'][11], df['dec (deg)'][11], 'phc')
+
+        model_fits_initial_guesses = [df['log (peak93 (jy/sr))'][11], df['sigma (arcsec)'][11], ra_off, dec_off]
+        model_fits_ranges = [[df['log (peak93 (jy/sr))'][11]-(3*df['log (peak93 (jy/sr))_err'][11]), df['log (peak93 (jy/sr))'][11]+(3*df['log (peak93 (jy/sr))_err'][11])], 
+                            [df['sigma (arcsec)'][11]-(3*df['sigma_err (arcsec)'][11]), df['sigma (arcsec)'][11]+(3*df['sigma_err (arcsec)'][11])], 
+                            [-5, 5], [-5, 5]]
+
+        logging.info('peak_b, sigma_b, rao, deco = pars')
+        logging.info('start, step, numsteps, nxy, dxy = args')
+        logging.info('u, v, re, im, w = vis_data')
+
+    elif fittype == 'blob_radex6':
+
+        # Load the CSV file into a DataFrame
+        df = pd.read_csv('ymc_prior_full_err.csv')
+
+        ra_off, dec_off = cal_offset(df['ra (deg)'][5], df['dec (deg)'][5], 'phc')
+
+        model_fits_initial_guesses = [df['log (peak93 (jy/sr))'][5], df['sigma (arcsec)'][5], ra_off, dec_off]
+        model_fits_ranges = [[df['log (peak93 (jy/sr))'][5]-(3*df['log (peak93 (jy/sr))_err'][5]), df['log (peak93 (jy/sr))'][5]+(3*df['log (peak93 (jy/sr))_err'][5])], 
+                            [df['sigma (arcsec)'][5]-(3*df['sigma_err (arcsec)'][5]), df['sigma (arcsec)'][5]+(3*df['sigma_err (arcsec)'][5])], 
+                            [-5, 5], [-5, 5]]
+
+        logging.info('peak_b, sigma_b, rao, deco = pars')
+        logging.info('start, step, numsteps, nxy, dxy = args')
+        logging.info('u, v, re, im, w = vis_data')
+
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
 
     return model_fits_initial_guesses, model_fits_ranges
-
-def model_label(fittype):
-
-    if fittype=='gaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B. Peak", "B. Width", "Dist", "Angle"]
-    elif fittype=='fixring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["B. Peak", "B. Width", "Dist", "Angle"]
-    elif fittype=='twodring_2blob_ne':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B1. Peak", "B1. Width", "Dist1", "Angle1", "B2. Peak", "B2. Width", "Dist2", "Angle2"]
-    else:
-        logging.warning('Please choose a valid fitting model, or add a new one into the code.')
-    
-    return label

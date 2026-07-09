@@ -95,9 +95,9 @@ def main():
 
     #well get rid of this soon
     print('running')
-    productname = '/arc/home/pknowlton/uv_product_dir_new/test_scratch/scratch-gaussring-psr16c/gaussring'
+    productname = '/arc/home/pknowlton/uv_product_dir_new/test_scratch/twodgaussring-scratch/twodgaussring'
     chain = productname+'_chain.hdf5'
-    fittype='gaussring'
+    fittype='twodgaussring'
 
     save_results_hdf(fittype, productname, chain)
     print('done!')

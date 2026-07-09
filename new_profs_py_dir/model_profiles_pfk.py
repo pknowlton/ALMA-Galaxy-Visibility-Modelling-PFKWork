@@ -237,7 +237,7 @@ def twod_gaussring_2blob(pars, args, vis_data):
 
     return chi2
 
-###
+##################################################################################################################
 
 def model_prof(pars, args, vis_data, fittype):
 
@@ -302,8 +302,8 @@ def model_init(fittype):
         logging.info('u, v, re, im, w = vis_data')
 
     elif fittype == 'twodgaussring_blob':
-        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 7, 210]
-        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [-5, 15], [0, 10], [0, 20], [195,250]]
+        model_fits_initial_guesses = [6, 1, 7, 60, 15, 0, 0, 6, 1, 7, 15]
+        model_fits_ranges = [[-5, 15], [0, 10], [0, 20], [0, 90], [0, 180],[-5, 5], [-5, 5], [-5, 15], [0, 10], [0, 20], [0,90]]
         logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b, sigma_b, distance, angle = pars')
         logging.info('start, step, numsteps, nxy, dxy = args')
         logging.info('u, v, re, im, w = vis_data')
@@ -326,25 +326,3 @@ def model_init(fittype):
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
 
     return model_fits_initial_guesses, model_fits_ranges
-
-def model_label(fittype):
-
-    if fittype=='gaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B. Peak", "B. Width", "Dist", "Angle"]
-    elif fittype=='fixring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["B. Peak", "B. Width", "Dist", "Angle"]
-    elif fittype=='twodring_2blob_ne':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B1. Peak", "B1. Width", "Dist1", "Angle1", "B2. Peak", "B2. Width", "Dist2", "Angle2"]
-    else:
-        logging.warning('Please choose a valid fitting model, or add a new one into the code.')
-    
-    return label

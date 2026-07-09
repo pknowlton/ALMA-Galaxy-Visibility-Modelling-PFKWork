@@ -31,7 +31,7 @@ from astropy.units import Quantity
 from astropy.coordinates import SkyCoord
 from galario.double import get_image_size, chi2Profile, deg, arcsec, chi2Image
 
-from model_profiles_pfk import model_init, model_prof
+from model_profiles_pfk_radex import model_init, model_prof
 
 #Matplotlib used by corner, but TeX issue is causing crashes. Force usetex=False
 from matplotlib import pyplot as plt
@@ -62,11 +62,6 @@ def log_prior(pars, ranges, fittype):
 
     if np.any((pars <= ranges[:, 0]) | (pars >= ranges[:, 1])):
         return -np.inf
-
-    if fittype == 'twodring_2blob_ne':
-        if pars[10] > pars[14] or pars[9] < pars[13]:
-            return -np.inf
-    
     return 0.0
 
 def log_likelihood(pars, args, fittype):
@@ -145,63 +140,6 @@ def log_resource_usage():
     
     logging.info(f"Active Workers: {num_children}")
 
-def save_results_hdf(fittype, outname, chainname):
-
-    reader = emcee.backends.HDFBackend(chainname)
-    samples = reader.get_chain()
-    nsteps, nwalkers, ndim = samples.shape
-
-    logging.info('Read in hdf5 chain file...')
-    logging.info("Samples shape: %d steps, %d walkers, %d dims", nsteps, nwalkers, ndim)
-
-    if fittype=='gaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring':
-        #label = ["Peak", "$\sigma$", r"R$_{ring}$", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-    elif fittype=='twodgaussring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B. Peak", "B. Width", "Dist", "Angle"]
-    elif fittype=='fixring_blob':
-        #label = ["Peak", "Width", "Offset", "Inc", "PA", r"$\Delta$RA", r"$\Delta$Dec"]
-        label = ["B. Peak", "B. Width", "Dist", "Angle"]
-    else:
-        logging.warning('Please choose a valid fitting model, or add a new one into the code.')
-        return None
-
-    if len(label) != ndim:
-        logging.error(f"Dimension mismatch! File has {ndim} params, but labels has {len(label)}")
-        return None
-
-    #paths plot
-    fig, axes = plt.subplots(ndim, figsize=(10, 7), sharex=True)
-
-    for i in range(ndim):
-        ax = axes[i]
-        ax.plot(samples[:, :, i], "k", alpha=0.3)
-        ax.set_xlim(0, nsteps)
-        ax.set_ylabel(label[i])
-
-    axes[0].set_title(fittype+' paths')
-    axes[-1].set_xlabel("step number")
-    fig.tight_layout()
-    fig.savefig('./output/'+fittype+'_paths.png')
-    logging.info('Successfully saved the paths plot...')
-
-    #corner plot
-    flat_samples = reader.get_chain(discard=2000, flat=True)
-    try:
-        fig = corner.corner(flat_samples, labels=label,
-                    show_titles=True, quantiles=[0.16, 0.50, 0.84],
-                    label_kwargs={'labelpad':20, 'fontsize':0}, fontsize=8)
-        fig.savefig('./output/'+fittype+'_corner.png')
-        logging.info('Successfully saved the corner plot...')
-    except:
-        #Most likely a TeX error, so we want the extra info
-        logging.error('Something went wrong in the creation of the corner plot. Moving on...', exc_info=True)
-#eventually this will be moved to its own plot visualization script
-
 args, GLOBAL_DATA = initialize_data('uvtable.txt')
 #global variable where we will store our visibility data, this should help the code run faster
 
@@ -219,7 +157,7 @@ def main():
     """
 
     parser=argparse.ArgumentParser()
-    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
+    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
     pargs=parser.parse_args()
 
     fittype = pargs.fittype
@@ -270,7 +208,7 @@ def main():
     #backend.reset(nwalkers, ndim)
     #logging.info('Chain: %s', chain)
 
-    max_n = 30000
+    max_n = 20000
 
     # We'll track how the average autocorrelation time estimate changes
     index = 0
