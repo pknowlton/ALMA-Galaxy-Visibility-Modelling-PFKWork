@@ -60,6 +60,137 @@ def new_model_ring_1blob_setup_plot(pars, args):
 
     return ring_model
 
+
+#########################
+### ring_1blob_axr
+#########################
+
+def gaussblob_axr_plot(peak, geo_mean, xx, yy, axr):
+
+    sigmay = geo_mean / np.sqrt(axr)
+    sigmax = sigmay * axr
+    
+    return 10**peak * np.exp((-1/2) * (((xx)/sigmax)**2 + ((yy)/sigmay)**2))
+
+def new_model_ring_1blob_axr(peak, sigma, rad, inc, pa_guess, pa_gal, dra, ddec, peak_b1, geo_mean_b1, axr_b1, pa_b1, dist_b1, ang_b1, nxy, dxy):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    #apply deltaRA and deltaDec
+    xx_shifted = xx + (dra) #convert to arcsec, then pix (to match xx system) #move left 
+    yy_shifted = yy - (ddec) #move up
+
+    #then apply the pa determined from galario
+    xpa = xx_shifted*np.cos(np.deg2rad(pa_gal)) + yy_shifted*np.sin(np.deg2rad(pa_gal))
+    ypa = -xx_shifted*np.sin(np.deg2rad(pa_gal)) + yy_shifted*np.cos(np.deg2rad(pa_gal))
+
+    #best guess position angle applied
+    xpa_rg = xpa*np.cos(np.deg2rad(pa_guess)) + ypa*np.sin(np.deg2rad(pa_guess))
+    ypa_rg = -xpa*np.sin(np.deg2rad(pa_guess)) + ypa*np.cos(np.deg2rad(pa_guess))
+
+    #ring
+    xinc = xpa_rg/np.cos(np.deg2rad(inc))
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = dist_b1 * np.sin(np.deg2rad(ang_b1))
+    ydot_b1 = dist_b1 * np.cos(np.deg2rad(ang_b1))
+
+    xoff_b1 = xpa - xdot_b1
+    yoff_b1 = ypa - ydot_b1
+
+    xpab_b1 = xoff_b1*np.cos(np.deg2rad(pa_b1)) + yoff_b1*np.sin(np.deg2rad(pa_b1))
+    ypab_b1 = -xoff_b1*np.sin(np.deg2rad(pa_b1)) + yoff_b1*np.cos(np.deg2rad(pa_b1))
+
+    r_model = radial_gaussian_ring_plot(peak, sigma, rad, radius_vec)
+    b1_model = gaussblob_axr_plot(peak_b1, geo_mean_b1, xpab_b1, ypab_b1, axr_b1)
+    model_jysr = r_model+b1_model
+    
+    return model_jysr
+
+def new_model_ring_1blob_axr_setup_plot(pars, args):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, geo_mean_b1, axr_b1, pa_b1, dist_b1, ang_b1 = pars
+    nxy, dxy = args
+
+    pa_guess = 18.97
+
+    ring_model = new_model_ring_1blob_axr(peak, sigma, ring_rad, inclination, pa_guess, posangle, dRA, dDec, peak_b1, geo_mean_b1, axr_b1, pa_b1, dist_b1, ang_b1, nxy, dxy) 
+
+    return ring_model
+
+
+#########################
+### ring_3blob
+#########################
+
+def new_model_ring_3blob(peak, sigma, rad, inc, pa_guess, pa_gal, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    #apply deltaRA and deltaDec
+    xx_shifted = xx + (dra) #convert to arcsec, then pix (to match xx system) #move left 
+    yy_shifted = yy - (ddec) #move up
+
+    #then apply the pa determined from galario
+    xpa = xx_shifted*np.cos(np.deg2rad(pa_gal)) + yy_shifted*np.sin(np.deg2rad(pa_gal))
+    ypa = -xx_shifted*np.sin(np.deg2rad(pa_gal)) + yy_shifted*np.cos(np.deg2rad(pa_gal))
+
+    #best guess position angle applied
+    xpa_rg = xpa*np.cos(np.deg2rad(pa_guess)) + ypa*np.sin(np.deg2rad(pa_guess))
+    ypa_rg = -xpa*np.sin(np.deg2rad(pa_guess)) + ypa*np.cos(np.deg2rad(pa_guess))
+
+    #ring
+    xinc = xpa_rg/np.cos(np.deg2rad(inc))
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = dist_b1 * np.sin(np.deg2rad(ang_b1))
+    ydot_b1 = dist_b1 * np.cos(np.deg2rad(ang_b1))
+
+    #blob_2
+    xdot_b2 = dist_b2 * np.sin(np.deg2rad(ang_b2))
+    ydot_b2 = dist_b2 * np.cos(np.deg2rad(ang_b2))
+
+    #blob_3
+    xdot_b3 = dist_b3 * np.sin(np.deg2rad(ang_b3))
+    ydot_b3 = dist_b3 * np.cos(np.deg2rad(ang_b3))
+
+    r_model = radial_gaussian_ring_plot(peak, sigma, rad, radius_vec)
+    b1_model = gauss_blob_plot(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1)
+    b2_model = gauss_blob_plot(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2)
+    b3_model = gauss_blob_plot(peak_b3, sigma_b3, xpa, ypa, xdot_b3, ydot_b3)
+    model_jysr = r_model + b1_model + b2_model + b3_model
+
+    return model_jysr
+
+def new_model_ring_3blob_setup_plot(pars, args):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars
+    nxy, dxy = args
+
+    pa_guess = 18.97
+
+    ring_model = new_model_ring_3blob(peak, sigma, ring_rad, inclination, pa_guess, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy) 
+
+    return ring_model
+
+######################################################################################################################
+
 #########################
 ### Gaussian Ring
 #########################
@@ -224,6 +355,12 @@ def model_plot(pars, args, fittype):
     elif fittype == 'blob_radex15':
         ring_model = new_model_ring_1blob_setup_plot(pars, args)
 
+    elif fittype == 'blob_15axr':
+        ring_model = new_model_ring_1blob_axr_setup_plot(pars, args)
+
+    elif fittype == 'ring_3blob':
+        ring_model = new_model_ring_3blob_setup_plot(pars, args)
+
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
 
@@ -248,6 +385,10 @@ def model_label(fittype):
         label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B1. Peak", "B1. Width", "Dist1", "Angle1", "B2. Peak", "B2. Width", "Dist2", "Angle2"]
     elif fittype == 'blob_radex15':
         label = ["Peak", "Width", "Radius", "Inc", "PA", "Offset RA", "Offset Dec", "B1. Peak", "B1. Width", "B1. Dist", "B1. Angle"]
+    elif fittype == 'blob_15axr':
+        label = ["Peak", "Width", "Radius", "Inc", "PA", "Offset RA", "Offset Dec", "B1. Peak", "B1. Width", "B1. AxR", "B1. PA", "B1. Dist", "B1. Angle"]
+    elif fittype == 'ring_3blob':
+        label = ["Peak", "Width", "Radius", "Inc", "PA", "Offset RA", "Offset Dec", "B1. Peak", "B1. Width", "B1. Dist", "B1. Angle", "B2. Peak", "B2. Width", "B2. Dist", "B2. Angle", "B3. Peak", "B3. Width", "B3. Dist", "B3. Angle"]
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
     

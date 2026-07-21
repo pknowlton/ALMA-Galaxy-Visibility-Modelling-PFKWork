@@ -54,7 +54,7 @@ def img_prepper(fitsimg):
 def main():
 
     parser=argparse.ArgumentParser()
-    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
+    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6", "blob_15axr", "ring_3blob"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
     pargs=parser.parse_args()
 
     fittype = pargs.fittype
@@ -332,7 +332,7 @@ def main():
 
     ax1.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax1.get_transform(data_wcs), levels=peak_flux*np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
     ax2.contour(ring_model_plot, ring_model_plot, colors='k', transform=ax2.get_transform(data_wcs), levels=peak_flux*np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax3.contour(ring_model_plot, ring_model_plot, colors='k', transform=ax3.get_transform(data_wcs), levels=peak_flux*np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax3.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax3.get_transform(data_wcs), levels=peak_flux*np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
 
     #Mess with axis labels
     axes=[ax1, ax2, ax3]

@@ -178,7 +178,7 @@ def main():
     logging.info('Definiting initial guesses and prior ranges...')
 
     #set up walkers
-    nwalkers = 48
+    nwalkers = 32
     ndim = len(ranges)
     pos = np.zeros([nwalkers, ndim])
 
@@ -208,7 +208,7 @@ def main():
     #backend.reset(nwalkers, ndim)
     #logging.info('Chain: %s', chain)
 
-    max_n = 30000
+    max_n = 20000
 
     # We'll track how the average autocorrelation time estimate changes
     index = 0

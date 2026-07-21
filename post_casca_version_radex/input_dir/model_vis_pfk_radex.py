@@ -67,6 +67,163 @@ def new_model_ring_1blob_setup_vis(pars, args, vis_data):
 
     return model_vis
 
+
+#########################
+### ring_1blob_axr
+#########################
+
+def gaussblob_axr(peak, geo_mean, xx, yy, axr, dxy):
+
+    sigmay = geo_mean / np.sqrt(axr)
+    sigmax = sigmay * axr
+    
+    return 10**peak * np.exp((-1/2) * (((xx)/sigmax)**2 + ((yy)/sigmay)**2)) * (dxy**2)
+
+def new_model_ring_1blob_axr(peak, sigma, rad, inc, pa_guess, peak_b1, geo_mean_b1, axr_b1, pa_b1, dist_b1, ang_b1, nxy, dxy):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    #best guess position angle applied
+    xpa_rg = xx*np.cos(pa_guess) + yy*np.sin(pa_guess)
+    ypa_rg = -xx*np.sin(pa_guess) + yy*np.cos(pa_guess)
+
+    #ring
+    xinc = xpa_rg/np.cos(inc)
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    xoff_b1 = xx - xdot_b1
+    yoff_b1 = yy - ydot_b1
+
+    xpab_b1 = xoff_b1*np.cos(pa_b1) + yoff_b1*np.sin(pa_b1)
+    ypab_b1 = -xoff_b1*np.sin(pa_b1) + yoff_b1*np.cos(pa_b1)
+
+    r_model = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+    b1_model = gaussblob_axr(peak_b1, geo_mean_b1, xpab_b1, ypab_b1, axr_b1, dxy)
+    
+    return r_model + b1_model
+
+def new_model_ring_1blob_axr_setup_vis(pars, args, vis_data):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, geo_mean_b1, axr_b1, pa_b1, dist_b1, ang_b1 = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+
+    inclination *= deg
+    pa_guess = 18.97 * deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    geo_mean_b1 *= arcsec
+
+    dist_b1 *= arcsec
+    ang_b1 *= deg
+
+    pa_b1 *= deg
+
+    model_img = new_model_ring_1blob_axr(peak, sigma, ring_rad, inclination, pa_guess, peak_b1, geo_mean_b1, axr_b1, pa_b1, dist_b1, ang_b1, nxy, dxy) 
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
+
+    return model_vis
+    
+
+#########################
+### ring_3blob
+#########################
+
+def new_model_ring_3blob(peak, sigma, rad, inc, pa_guess, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    #best guess position angle applied
+    xpa_rg = xx*np.cos(pa_guess) + yy*np.sin(pa_guess)
+    ypa_rg = -xx*np.sin(pa_guess) + yy*np.cos(pa_guess)
+
+    #ring
+    xinc = xpa_rg/np.cos(inc)
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    #blob_2
+    xdot_b2 = dist_b2 * np.sin(ang_b2)
+    ydot_b2 = dist_b2 * np.cos(ang_b2)
+
+    #blob_3
+    xdot_b3 = dist_b3 * np.sin(ang_b3)
+    ydot_b3 = dist_b3 * np.cos(ang_b3)
+
+    r_model = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+    b1_model = gaussblob(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
+    b2_model = gaussblob(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
+    b3_model = gaussblob(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
+    
+    return r_model + b1_model + b2_model + b3_model
+
+def new_model_ring_3blob_setup_vis(pars, args, vis_data):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+
+    inclination *= deg
+    pa_guess = 18.97 * deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    sigma_b1 *= arcsec
+
+    dist_b1 *= arcsec
+    ang_b1 *= deg
+
+    sigma_b2 *= arcsec
+
+    dist_b2 *= arcsec
+    ang_b2 *= deg
+
+    sigma_b3 *= arcsec
+
+    dist_b3 *= arcsec
+    ang_b3 *= deg
+
+    model_img = new_model_ring_3blob(peak, sigma, ring_rad, inclination, pa_guess, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy)
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
+    
+    return model_vis
+
+######################################################################################################################
+
 #########################
 ### Radial Gaussian Ring
 #########################
@@ -329,6 +486,12 @@ def model_visibility(pars, args, vis_data, fittype):
 
     elif fittype == 'blob_radex15':
         model_vis = new_model_ring_1blob_setup_vis(pars, args, vis_data)
+
+    elif fittype == 'blob_15axr':
+        model_vis = new_model_ring_1blob_axr_setup_vis(pars, args, vis_data)
+
+    elif fittype == 'ring_3blob':
+        model_vis = new_model_ring_3blob_setup_vis(pars, args, vis_data)
 
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')

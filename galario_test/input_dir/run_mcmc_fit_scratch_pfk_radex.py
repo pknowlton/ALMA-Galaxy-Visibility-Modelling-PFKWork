@@ -140,7 +140,8 @@ def log_resource_usage():
     
     logging.info(f"Active Workers: {num_children}")
 
-args, GLOBAL_DATA = initialize_data('uvtable.txt')
+args, GLOBAL_DATA = initialize_data('uvtable_toy_shift_rot_shift22.txt')
+logging.info('uvtable_toy_shift_rot_shift22.txt')
 #global variable where we will store our visibility data, this should help the code run faster
 
 def main():
@@ -157,7 +158,7 @@ def main():
     """
 
     parser=argparse.ArgumentParser()
-    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6", "blob_15axr", "ring_3blob"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
+    parser.add_argument("fittype", choices=["galario_test"], default="galario_test", type=str, help="Model as specified in model_profiles.py")
     pargs=parser.parse_args()
 
     fittype = pargs.fittype
@@ -178,7 +179,7 @@ def main():
     logging.info('Definiting initial guesses and prior ranges...')
 
     #set up walkers
-    nwalkers = 48
+    nwalkers = 32
     ndim = len(ranges)
     pos = np.zeros([nwalkers, ndim])
 
@@ -208,7 +209,7 @@ def main():
     #backend.reset(nwalkers, ndim)
     #logging.info('Chain: %s', chain)
 
-    max_n = 30000
+    max_n = 10000
 
     # We'll track how the average autocorrelation time estimate changes
     index = 0
