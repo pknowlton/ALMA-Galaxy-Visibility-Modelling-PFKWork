@@ -1,5 +1,0 @@
-visFile = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable.txt' #must be a uvtable in the format u, v, Re(V), Im(V), weight. Use the uvplot package to get one of these. 
-obsFreq = 93e9 #in Hz
-numWalkers = 30
-burnTime = 100 #number of iterations for burn-in phase
-runTime = 1000 #number of iterations for the actual fitting run of the sampler
