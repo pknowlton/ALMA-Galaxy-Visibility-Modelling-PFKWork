@@ -222,6 +222,179 @@ def new_model_ring_3blob_setup_vis(pars, args, vis_data):
     
     return model_vis
 
+#########################
+### ring_3blob - fishing 1 blob
+#########################
+
+def new_model_ring_3blob_1fish(peak, sigma, rad, inc, pa_guess, pa_gal, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    xpa_bl = xx*np.cos(-pa_gal) + yy*np.sin(-pa_gal)
+    ypa_bl = -xx*np.sin(-pa_gal) + yy*np.cos(-pa_gal)
+
+    #best guess position angle applied
+    xpa_rg = xx*np.cos(pa_guess) + yy*np.sin(pa_guess)
+    ypa_rg = -xx*np.sin(pa_guess) + yy*np.cos(pa_guess)
+
+    #ring
+    xinc = xpa_rg/np.cos(inc)
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = (dist_b1 * np.sin(ang_b1)) + dra
+    ydot_b1 = (dist_b1 * np.cos(ang_b1)) - ddec
+
+    #blob_2
+    xdot_b2 = (dist_b2 * np.sin(ang_b2)) + dra
+    ydot_b2 = (dist_b2 * np.cos(ang_b2)) - ddec
+
+    #blob_3
+    xdot_b3 = dist_b3 * np.sin(ang_b3)
+    ydot_b3 = dist_b3 * np.cos(ang_b3)
+
+    r_model = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+    b1_model = gaussblob(peak_b1, sigma_b1, xpa_bl, ypa_bl, xdot_b1, ydot_b1, dxy)
+    b2_model = gaussblob(peak_b2, sigma_b2, xpa_bl, ypa_bl, xdot_b2, ydot_b2, dxy)
+    b3_model = gaussblob(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
+    
+    return r_model + b1_model + b2_model + b3_model
+
+def new_model_ring_3blob_1fish_setup_vis(pars, args, vis_data):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, peak_b2, sigma_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+
+    inclination *= deg
+    pa_guess = 18.97 * deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    sigma_b1 *= arcsec
+
+    dist_b1 = 6.2396616850087865 * arcsec
+    ang_b1 = 176.49647334982126 * deg
+
+    sigma_b2 *= arcsec
+
+    dist_b2 = 6.541229262283732 * arcsec
+    ang_b2 = 161.38982927847752 * deg
+
+    sigma_b3 *= arcsec
+
+    dist_b3 *= arcsec
+    ang_b3 *= deg
+
+    model_img = new_model_ring_3blob_1fish(peak, sigma, ring_rad, inclination, pa_guess, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy)
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
+    
+    return model_vis
+
+#########################
+### ring_3blob - 2 peak!
+#########################
+
+def gaussblob_2peak(peak1, sigma1, peak2, sigma2, xx, yy, xoff, yoff, dxy):
+
+    g1 = 10**peak1 * np.exp((-1/2) * (((xx-xoff)/sigma1)**2 + ((yy-yoff)/sigma1)**2)) * (dxy**2)
+    g2 = 10**peak2 * np.exp((-1/2) * (((xx-xoff)/sigma2)**2 + ((yy-yoff)/sigma2)**2)) * (dxy**2)
+
+    full_prof = g1+g2
+    
+    return full_prof
+
+def new_model_ring_3blob_2peak(peak, sigma, rad, inc, pa_guess, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, peak_b21, sigma_b21, peak_b22, sigma_b22, dist_b2, ang_b2, peak_b31, sigma_b31, peak_b32, sigma_b32, dist_b3, ang_b3, nxy, dxy):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    #best guess position angle applied
+    xpa_rg = xx*np.cos(pa_guess) + yy*np.sin(pa_guess)
+    ypa_rg = -xx*np.sin(pa_guess) + yy*np.cos(pa_guess)
+
+    #ring
+    xinc = xpa_rg/np.cos(inc)
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    #blob_2
+    xdot_b2 = dist_b2 * np.sin(ang_b2)
+    ydot_b2 = dist_b2 * np.cos(ang_b2)
+
+    #blob_3
+    xdot_b3 = dist_b3 * np.sin(ang_b3)
+    ydot_b3 = dist_b3 * np.cos(ang_b3)
+
+    r_model = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+    b1_model = gaussblob_2peak(peak_b11, sigma_b11, peak_b12, sigma_b12, xx, yy, xdot_b1, ydot_b1, dxy)
+    b2_model = gaussblob_2peak(peak_b21, sigma_b21, peak_b22, sigma_b22, xx, yy, xdot_b2, ydot_b2, dxy)
+    b3_model = gaussblob_2peak(peak_b31, sigma_b31, peak_b32, sigma_b32, xx, yy, xdot_b3, ydot_b3, dxy)
+    
+    return r_model + b1_model + b2_model + b3_model
+
+def new_model_ring_3blob_2peak_setup_vis(pars, args, vis_data):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, peak_b21, sigma_b21, peak_b22, sigma_b22, dist_b2, ang_b2, peak_b31, sigma_b31, peak_b32, sigma_b32, dist_b3, ang_b3 = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+
+    inclination *= deg
+    pa_guess = 18.97 * deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    sigma_b11 *= arcsec
+    sigma_b12 *= arcsec
+
+    dist_b1 *= arcsec
+    ang_b1 *= deg
+
+    sigma_b21 *= arcsec
+    sigma_b22 *= arcsec
+
+    dist_b2 *= arcsec
+    ang_b2 *= deg
+
+    sigma_b31 *= arcsec
+    sigma_b32 *= arcsec
+
+    dist_b3 *= arcsec
+    ang_b3 *= deg
+
+    model_img = new_model_ring_3blob_2peak(peak, sigma, ring_rad, inclination, pa_guess, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, peak_b21, sigma_b21, peak_b22, sigma_b22, dist_b2, ang_b2, peak_b31, sigma_b31, peak_b32, sigma_b32, dist_b3, ang_b3, nxy, dxy)
+    model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
+    
+    return model_vis
+
 ######################################################################################################################
 
 #########################
@@ -492,6 +665,12 @@ def model_visibility(pars, args, vis_data, fittype):
 
     elif fittype == 'ring_3blob':
         model_vis = new_model_ring_3blob_setup_vis(pars, args, vis_data)
+
+    elif fittype == 'ring_3blob_1fish':
+        model_vis = new_model_ring_3blob_1fish_setup_vis(pars, args, vis_data)
+
+    elif fittype == 'ring_3blob_2peak':
+        model_vis = new_model_ring_3blob_2peak_setup_vis(pars, args, vis_data)
 
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')

@@ -1,3 +1,5 @@
+#print('here we go')
+
 import multiprocessing
 
 # 1. THE MASTER KEY: Force Fork before anything else happens
@@ -5,8 +7,6 @@ try:
     multiprocessing.set_start_method('fork', force=True)
 except RuntimeError:
     pass
-
-import os
 
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -62,6 +62,11 @@ def log_prior(pars, ranges, fittype):
 
     if np.any((pars <= ranges[:, 0]) | (pars >= ranges[:, 1])):
         return -np.inf
+
+    if fittype == 'ring_3blob_2peak':
+        if (pars[8] <= pars[10]) or (pars[14] <= pars[16]) or (pars[20] <= pars[22]):
+            return -np.inf
+
     return 0.0
 
 def log_likelihood(pars, args, fittype):
@@ -144,6 +149,7 @@ args, GLOBAL_DATA = initialize_data('uvtable.txt')
 #global variable where we will store our visibility data, this should help the code run faster
 
 def main():
+
     """
     Main execution script for the MCMC fitting process.
 
@@ -157,7 +163,7 @@ def main():
     """
 
     parser=argparse.ArgumentParser()
-    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6", "blob_15axr", "ring_3blob"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
+    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6", "blob_15axr", "ring_3blob", "ring_3blob_1fish", "ring_3blob_2peak"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
     pargs=parser.parse_args()
 
     fittype = pargs.fittype
@@ -177,10 +183,15 @@ def main():
     ranges = np.array(ranges)
     logging.info('Definiting initial guesses and prior ranges...')
 
+    #for i in range(len(init_guess)):
+        #print(init_guess[i], ranges[i])
+
     #set up walkers
-    nwalkers = 48
+    nwalkers = 56
     ndim = len(ranges)
     pos = np.zeros([nwalkers, ndim])
+
+    #print('checking')
 
     for i in range(nwalkers):
         c = 0
@@ -190,6 +201,8 @@ def main():
             if chk_pars == 0:
                 c = 1
     logging.info('All guesses are within prior range...')
+
+    #print('All guesses are within prior range...')
 
     chain = './output/'+fittype+'_chain.hdf5'
     backend = emcee.backends.HDFBackend(chain)
@@ -208,7 +221,7 @@ def main():
     #backend.reset(nwalkers, ndim)
     #logging.info('Chain: %s', chain)
 
-    max_n = 30000
+    max_n = 20000
 
     # We'll track how the average autocorrelation time estimate changes
     index = 0
@@ -221,6 +234,8 @@ def main():
     logging.info(f"Saving autocorr history to: {tau_file}")
 
     logging.info('Beginning emcee run...')
+
+    #print('begin mc')
 
     with Pool(16) as pool:
 

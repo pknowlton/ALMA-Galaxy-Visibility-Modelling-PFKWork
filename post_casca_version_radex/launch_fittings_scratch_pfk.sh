@@ -44,7 +44,7 @@ ls
 ls casa_dir
 
 echo "Starting MCMC at $(date)"
-conda run -n pk_env_38 python run_mcmc_fit_scratch_pfk_radex.py $4
+conda run --no-capture-output -n pk_env_38 python -u run_mcmc_fit_scratch_pfk_radex.py $4
 conda run -n pk_env_38 python visualize_fit_final_radex.py $4
 # The exit code of the python script is captured here
 EXIT_CODE=$?

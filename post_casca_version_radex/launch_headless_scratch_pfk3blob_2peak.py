@@ -34,9 +34,9 @@ from canfar.sessions import Session
 
 #set up arglist for cmd
 in_dir = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/post_casca_version_radex/input_dir'
-out_dir = '/arc/home/pknowlton/post_casca_uv_product_dir/fishing1-3blob'
+out_dir = '/arc/home/pknowlton/post_casca_uv_product_dir/mult2peak-3blob'
 data_path = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable.txt'
-fittype = 'ring_3blob_1fish'
+fittype = 'ring_3blob_2peak'
 
 #set the session computing parameters
 cores=16

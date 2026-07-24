@@ -54,7 +54,7 @@ def img_prepper(fitsimg):
 def main():
 
     parser=argparse.ArgumentParser()
-    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6", "blob_15axr", "ring_3blob"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
+    parser.add_argument("fittype", choices=["gaussring", "twodgaussring", "twodgaussring_blob", "fixring_blob", "twodring_2blob_ne", "blob_radex15", "blob_radex6", "blob_15axr", "ring_3blob", "ring_3blob_1fish", "ring_3blob_2peak"], default="gaussring", type=str, help="Model as specified in model_profiles.py")
     pargs=parser.parse_args()
 
     fittype = pargs.fittype

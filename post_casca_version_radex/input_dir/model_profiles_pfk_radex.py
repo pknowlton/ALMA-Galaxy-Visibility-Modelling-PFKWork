@@ -227,6 +227,182 @@ def new_model_ring_3blob_setup(pars, args, vis_data):
     return chi2
 
 
+#########################
+### ring_3blob - fishing 1 blob
+#########################
+
+def new_model_ring_3blob_1fish(peak, sigma, rad, inc, pa_gal, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy, cos_pa, sin_pa):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    cos_bl = np.cos(-pa_gal)
+    sin_bl = np.sin(-pa_gal)
+
+    xpa_bl = xx * cos_bl + yy * sin_bl
+    ypa_bl = -xx * sin_bl + yy * cos_bl
+
+    #best guess position angle applied
+    xpa_rg = xx*cos_pa + yy*sin_pa
+    ypa_rg = -xx*sin_pa + yy*cos_pa
+
+    #ring
+    xinc = xpa_rg/np.cos(inc)
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = (dist_b1 * np.sin(ang_b1)) + dra
+    ydot_b1 = (dist_b1 * np.cos(ang_b1)) - ddec
+
+    xdot_b2 = (dist_b2 * np.sin(ang_b2)) + dra
+    ydot_b2 = (dist_b2 * np.cos(ang_b2)) - ddec
+
+    #blob_3
+    xdot_b3 = dist_b3 * np.sin(ang_b3)
+    ydot_b3 = dist_b3 * np.cos(ang_b3)
+
+    r_model = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+    b1_model = gaussblob(peak_b1, sigma_b1, xpa_bl, ypa_bl, xdot_b1, ydot_b1, dxy)
+    b2_model = gaussblob(peak_b2, sigma_b2, xpa_bl, ypa_bl, xdot_b2, ydot_b2, dxy)
+    b3_model = gaussblob(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
+    
+    return r_model + b1_model + b2_model + b3_model
+
+def new_model_ring_3blob_1fish_setup(pars, args, vis_data):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, peak_b2, sigma_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+
+    inclination *= deg
+    #pa_guess = 18.97 * deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    sigma_b1 *= arcsec
+
+    dist_b1 = 6.2396616850087865 * arcsec
+    ang_b1 = 176.49647334982126 * deg
+
+    sigma_b2 *= arcsec
+
+    dist_b2 = 6.541229262283732 * arcsec
+    ang_b2 = 161.38982927847752 * deg
+
+    sigma_b3 *= arcsec
+
+    dist_b3 *= arcsec
+    ang_b3 *= deg
+
+    model_img = new_model_ring_3blob_1fish(peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy, COS_PA, SIN_PA)
+    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+    
+    return chi2
+
+#########################
+### ring_3blob - 2 peak!
+#########################
+
+def gaussblob_2peak(peak1, sigma1, peak2, sigma2, xx, yy, xoff, yoff, dxy):
+
+    g1 = 10**peak1 * np.exp((-1/2) * (((xx-xoff)/sigma1)**2 + ((yy-yoff)/sigma1)**2)) * (dxy**2)
+    g2 = 10**peak2 * np.exp((-1/2) * (((xx-xoff)/sigma2)**2 + ((yy-yoff)/sigma2)**2)) * (dxy**2)
+
+    full_prof = g1+g2
+    
+    return full_prof
+
+def new_model_ring_3blob_2peak(peak, sigma, rad, inc, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, peak_b21, sigma_b21, peak_b22, sigma_b22, dist_b2, ang_b2, peak_b31, sigma_b31, peak_b32, sigma_b32, dist_b3, ang_b3, nxy, dxy, cos_pa, sin_pa):
+
+    #Initialize the image plane
+    image_size = nxy * dxy
+    x = np.linspace(-image_size/2, image_size/2, nxy)
+    y = np.linspace(-image_size/2, image_size/2, nxy)
+    xx, yy = np.meshgrid(x, y)
+
+    #best guess position angle applied
+    xpa_rg = xx*cos_pa + yy*sin_pa
+    ypa_rg = -xx*sin_pa + yy*cos_pa
+
+    #ring
+    xinc = xpa_rg/np.cos(inc)
+    radius_vec = np.hypot(xinc, ypa_rg)
+
+    #blob_1
+    #dist_b1 = dist_re_b1 * rad
+    
+    #xdot_b1 = dist_b1 * np.sin(ang_b1) * np.cos(inc)
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    #blob_2
+    xdot_b2 = dist_b2 * np.sin(ang_b2)
+    ydot_b2 = dist_b2 * np.cos(ang_b2)
+
+    #blob_3
+    xdot_b3 = dist_b3 * np.sin(ang_b3)
+    ydot_b3 = dist_b3 * np.cos(ang_b3)
+
+    r_model = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+    b1_model = gaussblob_2peak(peak_b11, sigma_b11, peak_b12, sigma_b12, xx, yy, xdot_b1, ydot_b1, dxy)
+    b2_model = gaussblob_2peak(peak_b21, sigma_b21, peak_b22, sigma_b22, xx, yy, xdot_b2, ydot_b2, dxy)
+    b3_model = gaussblob_2peak(peak_b31, sigma_b31, peak_b32, sigma_b32, xx, yy, xdot_b3, ydot_b3, dxy)
+    
+    return r_model + b1_model + b2_model + b3_model
+
+def new_model_ring_3blob_2peak_setup(pars, args, vis_data):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, peak_b21, sigma_b21, peak_b22, sigma_b22, dist_b2, ang_b2, peak_b31, sigma_b31, peak_b32, sigma_b32, dist_b3, ang_b3 = pars
+    start, step, numsteps, nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    # convert to radians
+    sigma *= arcsec
+    ring_rad *= arcsec
+
+    inclination *= deg
+    #pa_guess = 18.97 * deg
+    posangle *= deg
+
+    dRA *= arcsec
+    dDec *= arcsec
+
+    sigma_b11 *= arcsec
+    sigma_b12 *= arcsec
+
+    dist_b1 *= arcsec
+    ang_b1 *= deg
+
+    sigma_b21 *= arcsec
+    sigma_b22 *= arcsec
+
+    dist_b2 *= arcsec
+    ang_b2 *= deg
+
+    sigma_b31 *= arcsec
+    sigma_b32 *= arcsec
+
+    dist_b3 *= arcsec
+    ang_b3 *= deg
+
+    model_img = new_model_ring_3blob_2peak(peak, sigma, ring_rad, inclination, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, peak_b21, sigma_b21, peak_b22, sigma_b22, dist_b2, ang_b2, peak_b31, sigma_b31, peak_b32, sigma_b32, dist_b3, ang_b3, nxy, dxy, COS_PA, SIN_PA)
+    chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+    
+    return chi2
+
+
 ######################################################################################################################
 
 #########################
@@ -497,6 +673,12 @@ def model_prof(pars, args, vis_data, fittype):
 
     elif fittype == 'ring_3blob':
         chi2 = new_model_ring_3blob_setup(pars, args, vis_data)
+    
+    elif fittype == 'ring_3blob_1fish':
+        chi2 = new_model_ring_3blob_1fish_setup(pars, args, vis_data)
+
+    elif fittype == 'ring_3blob_2peak':
+        chi2 = new_model_ring_3blob_2peak_setup(pars, args, vis_data)
 
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
@@ -534,7 +716,7 @@ def cal_offset(ymc_ra, ymc_dec, mode):
     ###    
 
     dec_mid = (ymc_dec + ref_dec)/2
-    ra_off = (ymc_ra - ref_ra) * np.cos(np.deg2rad(ref_dec)) * 3600
+    ra_off = (ymc_ra - ref_ra) * np.cos(np.deg2rad(dec_mid)) * 3600
 
     dec_off = (ymc_dec - ref_dec) * 3600
 
@@ -697,7 +879,85 @@ def model_init(fittype):
         logging.info('start, step, numsteps, nxy, dxy = args')
         logging.info('u, v, re, im, w = vis_data')
 
+    elif fittype == 'ring_3blob_1fish':
+
+        # Load the CSV file into a DataFrame
+        df = pd.read_csv('ymc_prior_full_err.csv')
+
+        model_fits_initial_guesses_unround = [6.43, 1.06, 6.8, 60.85, 0, 0, 0, 
+                                        df['log (peak93 (jy/sr))'][11], df['sigma (arcsec)'][11],
+                                        df['log (peak93 (jy/sr))'][14], df['sigma (arcsec)'][14],
+                                        6.5, 0.1, 7.0, 168]
+
+        model_fits_ranges_unround = [[0, 10], [0.8, 1.8], [4.4, 7.2], [52.0, 62.0], [-10, 10], [-2, 2], [-2, 2],
+                            [4.5, 9.5], 
+                            [0.0, 0.6],
+                            [6.0, 8.0], 
+                            [0.0, 0.65],
+                            [0.0, 7.0], 
+                            [0.0, 0.7], 
+                            [5.0, 8.0],
+                            [160, 225]]
+
+        model_fits_initial_guesses = [round(num, 2) for num in model_fits_initial_guesses_unround]
+        model_fits_ranges = [[round(num, 2) for num in sublist] for sublist in model_fits_ranges_unround]
+
+        logging.info(model_fits_initial_guesses)
+        logging.info(model_fits_ranges)
+
+        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, peak_b2, sigma_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars')
+        logging.info('start, step, numsteps, nxy, dxy = args')
+        logging.info('u, v, re, im, w = vis_data')
+        
+    elif fittype == 'ring_3blob_2peak':
+
+        # Load the CSV file into a DataFrame
+        df = pd.read_csv('ymc_prior_full_err.csv')
+        
+        ang_b1, dist_b1 = prior_guess_1blob(df, 11)
+        ang_b2, dist_b2 = prior_guess_1blob(df, 5)
+        ang_b3, dist_b3 = prior_guess_1blob(df, 14)
+
+        model_fits_initial_guesses_unround = [6.43, 1.06, 6.8, 60.85, 0, 0, 0, 
+                                        df['log (peak93 (jy/sr))'][11], df['sigma (arcsec)'][11], 
+                                        df['log (peak93 (jy/sr))'][11], df['sigma (arcsec)'][11]*0.8, dist_b1, ang_b1,
+                                        df['log (peak93 (jy/sr))'][5], df['sigma (arcsec)'][5], 
+                                        df['log (peak93 (jy/sr))'][5], df['sigma (arcsec)'][5]*0.8, dist_b2, ang_b2,
+                                        df['log (peak93 (jy/sr))'][14], df['sigma (arcsec)'][14],
+                                        df['log (peak93 (jy/sr))'][14], df['sigma (arcsec)'][14]*0.8, dist_b3, ang_b3]
+
+        model_fits_ranges_unround = [[0, 10], [0.8, 1.8], [4.4, 7.2], [52.0, 62.0], [-10, 10], [-2, 2], [-2, 2],
+                            [4.5, 9.5],
+                            [0.0, 0.6],
+                            [7.5, 9.5], 
+                            [0.0, 0.3],
+                            [dist_b1-(20*df['sigma (arcsec)'][11]), dist_b1+(20*df['sigma (arcsec)'][11])],
+                            [ang_b1-20, ang_b1+20],
+                            [7.0, 9.0], 
+                            [0.0, 0.7], 
+                            [7.0, 9.0],
+                            [0.0, 0.7], 
+                            [dist_b2-(20*df['sigma (arcsec)'][5]), dist_b2+(20*df['sigma (arcsec)'][5])],
+                            [ang_b2-20, ang_b2+20],
+                            [6.0, 8.0], 
+                            [0.0, 0.7], 
+                            [6.0, 8.0], 
+                            [0.0, 0.3],
+                            [dist_b3-(20*df['sigma (arcsec)'][14]), dist_b3+(20*df['sigma (arcsec)'][14])],
+                            [ang_b3-20, ang_b3+20]]
+
+        model_fits_initial_guesses = [round(num, 2) for num in model_fits_initial_guesses_unround]
+        model_fits_ranges = [[round(num, 2) for num in sublist] for sublist in model_fits_ranges_unround]
+
+        logging.info(model_fits_initial_guesses)
+        logging.info(model_fits_ranges)
+
+        logging.info('peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, peak_b21, sigma_b21, peak_b22, sigma_b22, dist_b2, ang_b2, peak_b31, sigma_b31, peak_b32, sigma_b32, dist_b3, ang_b3 = pars')
+        logging.info('start, step, numsteps, nxy, dxy = args')
+        logging.info('u, v, re, im, w = vis_data')
+
     else:
         logging.warning('Please choose a valid fitting model, or add a new one into the code.')
+
 
     return model_fits_initial_guesses, model_fits_ranges
