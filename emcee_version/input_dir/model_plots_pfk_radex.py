@@ -355,6 +355,7 @@ def make_model_ring(npix, pixscale, peak, sigma, ringrad, inc, pa, dra, ddec):
 
     rad = np.hypot(xinc, ypa)
     model_jysr = radial_gaussian_ring_plot(peak, sigma, ringrad, rad)
+    
     return model_jysr #leave in Jy/sr here. I will convert Jy/bm to Jy/sr to match later.
 
 def gaussring_plot(pars, args):
