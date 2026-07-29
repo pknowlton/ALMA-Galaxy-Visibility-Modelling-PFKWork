@@ -4,6 +4,7 @@ Minimal 1D Dynesty Dummy Test Script.
 Fits a 1D Gaussian target distribution without multiprocessing.
 """
 
+import time
 import numpy as np
 import dynesty
 
@@ -22,31 +23,58 @@ def main():
     print("=== Minimal 1D Dynesty Test ===")
     
     # Initialize 1D sampler
-    ndim = 1
     sampler = dynesty.NestedSampler(
         log_likelihood, 
         prior_transform, 
-        ndim=ndim, 
+        ndim=1, 
         nlive=200
     )
 
-    # Run nested sampling
+    # Run nested sampling with timing
     print("Running sampling...")
-    sampler.run_nested(print_progress=True)
+    t0 = time.perf_counter()
+    sampler.run_nested(dlogz=0.1, print_progress=True)
+    t1 = time.perf_counter()
+    wall_seconds = t1 - t0
     
-    # Retrieve and display results
+    # Retrieve results
     res = sampler.results
+    
+    # Final logz with error
     logz = res.logz[-1]
+    logz_err = res.logzerr[-1]
     
-    # Calculate weighted mean parameter
+    # Best parameter results and 1-sigma error
     weights = np.exp(res.logwt - logz)
-    mean_val = np.average(res.samples[:, 0], weights=weights)
+    mean = np.average(res.samples, weights=weights, axis=0)
+    std = np.sqrt(np.average((res.samples - mean)**2, weights=weights, axis=0))
     
-    print("\n" + "="*30)
-    print("      RESULTS SUMMARY         ")
-    print("="*30)
-    print(f"Log Evidence ln(Z) : {logz:.3f}")
-    print(f"Recovered Mean     : {mean_val:.3f} (True Target: 3.0)")
+    # Diagnostics
+    niter = res.niter
+    ncall = np.sum(res.ncall)
+    ncall_per_sec = ncall / wall_seconds
+    eff = res.eff
+
+    # Compute remaining dlogz at stopping point (before final live points were added)
+    logl_live = res.logl[-res.nlive:]
+    logvol_stop = res.logvol[res.niter - 1]
+    logz_stop = res.logz[res.niter - 1]
+    logz_remain = np.max(logl_live) + logvol_stop
+    remaining_dlogz = np.logaddexp(logz_stop, logz_remain) - logz_stop
+
+    # Print Results Diagnostics
+    print("\n" + "=" * 40)
+    print("RESULTS DIAGNOSTICS")
+    print("=" * 40)
+    print(f"Final Log Evidence ln(Z) : {logz:.3f} +/- {logz_err:.3f}")
+    for i in range(len(mean)):
+        print(f"Param {i} (Mean +/- 1-sig) : {mean[i]:.3f} +/- {std[i]:.3f}")
+    print(f"Current Iteration        : {niter}")
+    print(f"Function Calls (ncall)   : {ncall}")
+    print(f"ncall / Wall Second      : {ncall_per_sec:.2f}")
+    print(f"Efficiency               : {eff:.2f}%")
+    print(f"Remaining dlogz          : {remaining_dlogz:.4f}")
+    print("=" * 40)
 
 if __name__ == "__main__":
     main()

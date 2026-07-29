@@ -1,4 +1,11 @@
 import os
+
+# 1. Enforce single-threading BEFORE loading C extensions
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import sys
 import time
 import logging
@@ -6,24 +13,17 @@ import argparse
 import psutil
 import numpy as np
 import multiprocessing
-from dynesty.pool import Pool
 import dynesty
+from dynesty.pool import Pool
+from dynesty import utils as dyfunc
 
 from galario.double import get_image_size
-from model_prof import model_prof, model_dim
+from model_prof import model_prof, model_addon
 import prior_tform
 
-# Force fork method for multiprocessing consistency across environments
-try:
-    multiprocessing.set_start_method('fork', force=True)
-except RuntimeError:
-    pass
-
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-
 ###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%######%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%######%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###
+
+GLOBAL_DATA = None
 
 def initialize_data(data_file):
 
@@ -63,17 +63,17 @@ def log_likelihood(pars, args, fittype):
     """
 
     global GLOBAL_DATA # Add this line to be safe
-    vis_data = GLOBAL_DATA
-
-    chi2 = model_prof(pars, args, vis_data, 'chi2', fittype)
+    
+    chi2 = model_prof(pars, args, GLOBAL_DATA, 'chi2', fittype)
 
     return -0.5 * chi2
-
 
 args, GLOBAL_DATA = initialize_data('uvtable.txt')
 #global variable where we will store our visibility data, this should help the code run faster
 
 def main():
+
+    global GLOBAL_DATA
 
     parser=argparse.ArgumentParser()
     parser.add_argument("fittype", type=str, help="Model as specified in model_prof.py")
@@ -97,42 +97,93 @@ def main():
 
     logging.info(f'Prior transform function is {fittype}_ptform')
 
-    ndim = model_dim(fittype)
+    labels, units, ndim = model_addon(fittype)
 
     logging.info(f"Dimensions for {fittype}: {ndim}")
+    logging.info(f"Parameters for {fittype}: {labels}")
 
     check_file = './output/'+fittype+'_checkpoint.hdf5'
-    hist_file = './output/'+fittype+'_history.hdf5'
-    fit_start=time.time()
+    #hist_file = './output/'+fittype+'_history.hdf5'
+    fit_start=time.perf_counter()
 
     logging.info('Initializing Dynesty NestedSampler with dynesty.pool.Pool(16)...')
     with Pool(16, log_likelihood, prior_transform, logl_args=(args, fittype)) as pool:
         sampler = dynesty.NestedSampler(
-            pool.loglikelihood,
+            pool.loglike,
             pool.prior_transform,
             ndim,
-            nlive=250,
+            #save_evaluation_history=True,
+            #history_filename=hist_file,
+            nlive=1500,
             bound='multi',
-            sample='unif',
-            pool=pool,
-            queue_size=16
+            sample='rslice',
+            slices=10,
+            pool=pool
         )
 
         logging.info('Running Nested Sampler with dlogz=0.5...')
 
         sampler.run_nested(
             dlogz=0.5, maxiter=20000,
-            checkpoint_file=check_file,
-            save_evaluation_history=True,
-            history_filename=hist_file,
+            checkpoint_file=check_file
         )
 
     logging.info('Sampling finished successfully. Results saved to %s', check_file)
     log_resource_usage()
-    fit_end=time.time()
-    logging.info("Duration of the fitting run is {0:.1f} seconds".format(fit_end-fit_start))
-    logging.info("Duration of the fitting run is {0:.1f} days".format((fit_end-fit_start)/86400))
+    fit_end=time.perf_counter()
+    wall_time = fit_end-fit_start
+    logging.info("Duration of the fitting run is {0:.1f} seconds".format(wall_time))
+    logging.info("Duration of the fitting run is {0:.1f} days".format((wall_time)/86400))
 
+    logging.info("==========Dynesty Diagnostics Summary==========")
+
+    res = sampler.results
+
+    nlive = res.nlive
+    niter = res.niter
+    ncall = np.sum(res.ncall)
+    eff = res.eff
+    eval_thruput = ncall / wall_seconds
+
+    logging.info(f"number of live points          : {nlive} ")
+    logging.info(f"number of iterations           : {niter} ")
+    logging.info(f"total number of function calls : {ncall} ")
+    logging.info(f"overall sampling efficiency    : {eff:.2f}%")
+    logging.info(f"function call/wall time        : {eval_thruput:.2f} evals/sec")
+
+    logging.info("==========Dynesty Results Summary==========")
+
+    logz = res.logz[-1]
+    logz_err = res.logzerr[-1]
+
+    # Compute remaining dlogz at stopping point (before final live points were added)
+    logl_live = res.logl[-res.nlive:]
+    logvol_stop = res.logvol[res.niter - 1]
+    logz_stop = res.logz[res.niter - 1]
+    logz_remain = np.max(logl_live) + logvol_stop
+    remaining_dlogz = np.logaddexp(logz_stop, logz_remain) - logz_stop
+
+    weights = np.exp(res.logwt - logz)
+
+    logging.info(f"log evidence ln(Z)             : {logz:.3f} +/- {logz_err:.3f}")
+    logging.info(f"remaining dlogz                : {remaining_dlogz:.4f}")
+
+    for i in range(ndim):
+    # Calculate 16th, 50th (median), and 84th percentiles for the 1-sigma interval
+        quantiles = dyfunc.quantile(res.samples[:, i], [0.159, 0.5, 0.841], weights=weights)
+    
+        median = quantiles[1]
+        minus_1sig = median - quantiles[0]
+        plus_1sig = quantiles[2] - median
+
+        logging.info(f"{labels[i]:<30} : {median:.3f}  (+{plus_1sig:.3f} / -{minus_1sig:.3f}) {units[i]}")
 
 if __name__ == '__main__':
+
+    # Set start method safely before pool creation
+    try:
+        multiprocessing.set_start_method('fork', force=True)
+    except RuntimeError:
+        pass
+
     main()
