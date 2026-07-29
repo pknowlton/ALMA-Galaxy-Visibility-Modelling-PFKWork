@@ -13,7 +13,7 @@ echo "$DATA_PATH"
 FITTYPE=$5
 echo "$FITTYPE"
 
-BSH_CMD="/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/post_casca_version_radex/launch_fittings_scratch_pfk.sh"
+BSH_CMD="/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/emcee_version/launch_fittings_scratch_pfk.sh"
 
 PSR_DIR="/arc/home/pknowlton/post_casca_uv_product_dir/resource_usage"
 

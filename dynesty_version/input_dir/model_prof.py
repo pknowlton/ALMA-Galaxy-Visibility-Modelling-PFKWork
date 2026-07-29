@@ -119,10 +119,13 @@ def model_prof(pars, args, vis_data, version, fittype):
 ##################################################################################################################################################################################
 ##################################################################################################################################################################################
 
-def model_dim(fittype):
+
+def model_addon(fittype):
 
     if fittype == 'twod_gaussring':
-        ndim = 7
+        label = ["Peak", "Width", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
+        unit = ["log(Jy/sr)", "arcsec", "arcsec", "degrees", "degrees", "arcsec", "arcsec"]
+        ndim = len(label)
 
 
     else:
@@ -130,7 +133,4 @@ def model_dim(fittype):
         logging.warning(msg)
         raise ValueError(msg)
 
-    return ndim
-
-
-
+    return label, unit, ndim
