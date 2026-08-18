@@ -17,6 +17,8 @@ BSH_CMD="/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynes
 
 PSR_DIR="/arc/home/pknowlton/dynest_product_dir/resource_usage"
 
+mkdir -p "${PSR_DIR}"
+
 txtfile="${PSR_DIR}/${NAME}_psrecord.txt"
 plotfile="${PSR_DIR}/${NAME}_psrecord.png"
 
@@ -25,3 +27,10 @@ psrecord "${BSH_CMD} ${IN_DIR} ${OUT_DIR} ${DATA_PATH} ${FITTYPE}" \
   --plot "$plotfile" \
   --include-children \
   --interval 60
+
+# Copy psrecord outputs to OUT_DIR as well
+if [ -n "${OUT_DIR}" ]; then
+    mkdir -p "${OUT_DIR}"
+    [ -f "$txtfile" ] && cp "$txtfile" "${OUT_DIR}/"
+    [ -f "$plotfile" ] && cp "$plotfile" "${OUT_DIR}/"
+fi
