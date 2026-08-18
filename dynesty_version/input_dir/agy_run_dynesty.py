@@ -39,12 +39,6 @@ def initialize_data(data_file):
 
     return args, vis_data
 
-def log_resource_usage():
-    parent = psutil.Process(os.getpid())
-    num_children = len(parent.children(recursive=True))
-    
-    logging.info(f"Active Workers: {num_children}")
-
 ###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%######%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%######%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###%%%###
 
 def log_likelihood(pars, args, fittype):
@@ -102,34 +96,34 @@ def main():
     logging.info(f"Dimensions for {fittype}: {ndim}")
     logging.info(f"Parameters for {fittype}: {labels}")
 
-    check_file = './output/'+fittype+'_checkpoint.hdf5'
+    check_file = './output/'+fittype+'_checkpoint.save'
     #hist_file = './output/'+fittype+'_history.hdf5'
     fit_start=time.perf_counter()
 
-    logging.info('Initializing Dynesty NestedSampler with dynesty.pool.Pool(16)...')
+    logging.info('Initializing Dynesty DynamicNestedSampler with dynesty.pool.Pool(16)...')
     with Pool(16, log_likelihood, prior_transform, logl_args=(args, fittype)) as pool:
-        sampler = dynesty.NestedSampler(
+        sampler = dynesty.DynamicNestedSampler(
             pool.loglike,
             pool.prior_transform,
             ndim,
             #save_evaluation_history=True,
             #history_filename=hist_file,
-            nlive=1500,
+            nlive=500,
             bound='multi',
-            sample='rslice',
-            slices=10,
-            pool=pool
+            sample='rwalk',
+            #slices=10,
+            pool=pool,
+            queue_size=16
         )
 
         logging.info('Running Nested Sampler with dlogz=0.5...')
 
         sampler.run_nested(
-            dlogz=0.5, maxiter=20000,
+            dlogz_init=0.5, maxbatch=0, maxiter=10000,
             checkpoint_file=check_file
         )
 
     logging.info('Sampling finished successfully. Results saved to %s', check_file)
-    log_resource_usage()
     fit_end=time.perf_counter()
     wall_time = fit_end-fit_start
     logging.info("Duration of the fitting run is {0:.1f} seconds".format(wall_time))
@@ -139,13 +133,14 @@ def main():
 
     res = sampler.results
 
-    nlive = res.nlive
+    #nlive = res.nlive
+    n_mean = int(np.round(np.mean(res.samples_n)))
     niter = res.niter
     ncall = np.sum(res.ncall)
     eff = res.eff
-    eval_thruput = ncall / wall_seconds
+    eval_thruput = ncall / wall_time
 
-    logging.info(f"number of live points          : {nlive} ")
+    logging.info(f"average number of live points  : {n_mean} ")
     logging.info(f"number of iterations           : {niter} ")
     logging.info(f"total number of function calls : {ncall} ")
     logging.info(f"overall sampling efficiency    : {eff:.2f}%")
@@ -157,10 +152,17 @@ def main():
     logz_err = res.logzerr[-1]
 
     # Compute remaining dlogz at stopping point (before final live points were added)
-    logl_live = res.logl[-res.nlive:]
-    logvol_stop = res.logvol[res.niter - 1]
-    logz_stop = res.logz[res.niter - 1]
-    logz_remain = np.max(logl_live) + logvol_stop
+    #logl_live = res.logl[-res.nlive:]
+    #logvol_stop = res.logvol[res.niter - 1]
+    #logz_stop = res.logz[res.niter - 1]
+    #logz_remain = np.max(logl_live) + logvol_stop
+    #remaining_dlogz = np.logaddexp(logz_stop, logz_remain) - logz_stop
+
+    # Compute remaining dlogz at stopping point
+    logl_max = np.max(res.logl)     # Max log-likelihood among live points (and entire run)
+    logvol_stop = res.logvol[-1]    # Final log prior volume
+    logz_stop = res.logz[-1]        # Accumulated log evidence at stopping point
+    logz_remain = logl_max + logvol_stop
     remaining_dlogz = np.logaddexp(logz_stop, logz_remain) - logz_stop
 
     weights = np.exp(res.logwt - logz)

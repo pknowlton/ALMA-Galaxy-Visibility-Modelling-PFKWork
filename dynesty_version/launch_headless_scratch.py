@@ -35,7 +35,7 @@ from canfar.sessions import Session
 
 #set up arglist for cmd
 in_dir = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/input_dir'
-out_dir = '/arc/home/pknowlton/dynest_product_dir/dynest-twod-gaussring'
+out_dir = '/arc/home/pknowlton/dynest_product_dir/dynest-twod-gaussring-dynamicnest-fixed'
 data_path = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable.txt'
 
 parser=argparse.ArgumentParser()
@@ -47,7 +47,7 @@ fittype = pargs.fittype
 #set the session computing parameters
 cores=16
 mem=None
-name = out_dir.split('/')[-1] if out_dir else "mcmc-run-000"
+name = out_dir.split('/')[-1] if out_dir else "dynest-run-000"
 image='images.canfar.net/skaha/astroml:latest'
 cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/launch_fittings_scratch_psrec_pfk.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
 arglist = [in_dir, out_dir, name, data_path, fittype]
