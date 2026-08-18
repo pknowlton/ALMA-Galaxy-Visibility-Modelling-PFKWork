@@ -49,7 +49,7 @@ cores=16
 mem=None
 name = out_dir.split('/')[-1] if out_dir else "dynest-run-000"
 image='images.canfar.net/skaha/astroml:latest'
-cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/launch_fittings_scratch_psrec_pfk.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
+cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/launch_fittings_scratch_bshlog_pfk.sh' #this should be the complete path to the .sh script that launches the run_fittings.py script
 arglist = [in_dir, out_dir, name, data_path, fittype]
 args = ' '.join(arglist)
 

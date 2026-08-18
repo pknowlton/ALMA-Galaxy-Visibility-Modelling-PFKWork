@@ -13,8 +13,10 @@ echo "$FITTYPE"
 
 SCRATCH_ROOT="/scratch"
 
-# 1. Create a unique workspace
-STAGING_DIR=$(mktemp -d "${SCRATCH_ROOT}/mcmc_${FITTYPE}_XXXXXX")
+# 1. Create a unique workspace (or reuse if exported by parent script)
+if [ -z "${STAGING_DIR}" ]; then
+    STAGING_DIR=$(mktemp -d "${SCRATCH_ROOT}/mcmc_${FITTYPE}_XXXXXX")
+fi
 echo "Created staging area: ${STAGING_DIR}"
 
 # 2. Setup the "Exit Trap" 
