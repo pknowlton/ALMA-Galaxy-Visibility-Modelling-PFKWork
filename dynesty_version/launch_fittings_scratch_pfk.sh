@@ -47,7 +47,7 @@ ls casa_dir
 
 echo "Starting run at $(date)"
 conda run -n pk_env_38 python agy_run_dynesty.py $4
-#conda run -n pk_env_38 python visualize_fit_final_radex.py $4
+conda run -n pk_env_38 python visualize_dynesty.py $4
 # The exit code of the python script is captured here
 EXIT_CODE=$?
 

@@ -16,6 +16,7 @@ import multiprocessing
 import dynesty
 from dynesty.pool import Pool
 from dynesty import utils as dyfunc
+from dynesty import DynamicNestedSampler
 
 from galario.double import get_image_size
 from model_prof import model_prof, model_addon
@@ -108,18 +109,16 @@ def main():
             ndim,
             #save_evaluation_history=True,
             #history_filename=hist_file,
-            nlive=500,
+            nlive=250,
             bound='multi',
             sample='rwalk',
             #slices=10,
             pool=pool,
             queue_size=16
         )
-
-        logging.info('Running Nested Sampler with dlogz=0.5...')
-
+        
         sampler.run_nested(
-            dlogz_init=0.5, maxbatch=0, maxiter=10000,
+            dlogz_init=0.5, maxbatch=0, maxiter=None, maxcall=None,
             checkpoint_file=check_file
         )
 
