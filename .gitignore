@@ -1,3 +1,7 @@
 casa_dir/
-.DS_Store
 FIX_package/
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+.ipynb_checkpoints/
