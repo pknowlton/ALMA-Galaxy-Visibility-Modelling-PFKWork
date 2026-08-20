@@ -1,3 +1,22 @@
+"""
+Dynesty Visualization, Residual Imaging, and Post-Processing
+=============================================================
+This script post-processes the results of a Dynesty nested sampling run:
+1. Restores the sampling state from the checkpoint file (`<fittype>_checkpoint.save`).
+2. Extracts parameter posteriors and computes best-fit (median) parameter estimates.
+3. Generates Dynesty diagnostic figures (run progression summary and corner plot).
+4. Evaluates best-fit synthetic visibilities and subtracts them from the observed data
+   to produce residual visibilities: $V_{\text{resid}} = V_{\text{obs}} - V_{\text{mod}}$.
+5. Implants residual visibilities into CASA Measurement Sets (`.ms`) and performs
+   synthesis deconvolution (`tclean`) and primary beam correction (`impbcor`).
+6. Generates multi-panel comparison figures showing:
+   [Observed CLEAN Image | Model Sky Intensity | CLEAN Residual Visibilities]
+   with and without contour overlays, saving all figures to a multipage PDF.
+
+Requirements:
+    - Python environment with Dynesty, CASA (casatools, casatasks), Astropy, and Matplotlib.
+"""
+
 import os
 os.environ["CASACORE_MEASURES_AUTO_UPDATE"] = "false"
 
@@ -23,33 +42,75 @@ from matplotlib.backends.backend_pdf import PdfPages
 import logging
 import corner
 
+# Enable LaTeX typesetting for figure labels and text annotations
 rc('text', usetex=True)
-font = {'family' : 'serif',
-        'weight' : 'bold',
-        'size'   : '14'}
+font = {'family': 'serif',
+        'weight': 'bold',
+        'size': '14'}
 rc('font', **font)
 
 def jybm_to_jysr(infile):
+    """
+    Computes the beam solid angle factor to convert Jy/beam into Jy/steradian.
+
+    Radio interferometric images produced by CLEAN deconvolution are calibrated in
+    flux density per synthesised beam ($\text{Jy}/\text{beam}$). To obtain physical
+    surface brightness ($\text{Jy}/\text{sr}$), the pixel values are divided by the
+    beam solid angle:
+        $\Omega_{\text{beam}} = \frac{\pi}{4 \ln 2} \cdot \theta_{\text{maj}} \cdot \theta_{\text{min}}$
+    where $\theta_{\text{maj}}$ (`BMAJ`) and $\theta_{\text{min}}$ (`BMIN`) are the
+    restoring beam major and minor full-width at half-maximum (FWHM) axes.
+
+    Parameters
+    ----------
+    infile : str
+        Path to the FITS image file containing `BMAJ` and `BMIN` in its primary header.
+
+    Returns
+    -------
+    omega_bm_sr : float
+        Synthesised beam solid angle in steradians.
+    """
     from astropy.io import fits
 
     hdr = fits.open(infile)[0].header
-    bmaj = hdr['BMAJ']
-    bmin = hdr['BMIN']
+    bmaj = hdr['BMAJ']  # Major axis FWHM in degrees
+    bmin = hdr['BMIN']  # Minor axis FWHM in degrees
 
-    omega_bm_deg2 = (np.pi/(2*np.log(2))) * bmaj*bmin
-    omega_bm_sr = omega_bm_deg2 / (180/np.pi)**2
-    return omega_bm_sr #divide the Jy/bm measurement by this factor
+    # Gaussian beam solid angle in square degrees: pi / (4 * ln(2)) * FWHM_maj * FWHM_min
+    omega_bm_deg2 = (np.pi / (2 * np.log(2))) * bmaj * bmin
+    # Convert square degrees to steradians: 1 sr = (180 / pi)^2 deg^2
+    omega_bm_sr = omega_bm_deg2 / (180 / np.pi)**2
+    return omega_bm_sr  # Divide Jy/beam measurements by this factor to obtain Jy/sr
 
 def img_prepper(fitsimg):
-    #settings to control the section of the image that is plotted
+    """
+    Loads a FITS image, extracts WCS coordinates, converts units, and crops a 2D cutout.
+
+    Extracts a $40'' \times 40''$ field of view centered on the galactic nucleus of
+    NGC 3351 ($\alpha = 10^{\text{h}}43^{\text{m}}57.75^{\text{s}}$, $\delta = +11^\circ 42' 13.34''$).
+
+    Parameters
+    ----------
+    fitsimg : str
+        Path to the input FITS image file.
+
+    Returns
+    -------
+    im_wcs : astropy.wcs.WCS
+        2D celestial World Coordinate System extracted from the FITS header.
+    data : numpy.ndarray
+        2D image cutout array in surface brightness units ($\text{Jy}/\text{sr}$).
+    """
+    # Coordinates of NGC 3351 galaxy nucleus and field-of-view cutout size
     center = SkyCoord('10h43m57.75s', '11:42:13.34deg', frame='icrs')
-    box_bkg = [40*u.arcsecond,40*u.arcsecond]
-    box_contour1 = [40*u.arcsecond,40*u.arcsecond]
+    box_bkg = [40 * u.arcsecond, 40 * u.arcsecond]
 
     im = fits.open(fitsimg)[0]
     im_wcs = WCS(im.header, naxis=2)
     conv = jybm_to_jysr(infile=fitsimg)
-    im_plot = Cutout2D(im.data/conv, center, box_bkg, wcs=im_wcs)
+    # Convert image from Jy/beam to Jy/sr and crop around galaxy center
+    im_plot = Cutout2D(im.data / conv, center, box_bkg, wcs=im_wcs)
 
     return im_wcs, im_plot.data
 
@@ -59,19 +120,46 @@ def img_prepper(fitsimg):
 
 
 def main():
+    """
+    Main visualization and post-processing routine.
 
-    parser=argparse.ArgumentParser()
-    parser.add_argument("fittype", type=str, help="Model as specified in model_prof.py")
-    pargs=parser.parse_args()
+    Workflow:
+    1. Restores the Dynesty sampler from checkpoint file (`./output/<fittype>_checkpoint.save`).
+    2. Calculates median parameter values (best-fit model $\hat{\theta}$).
+    3. Plots nested sampling summary trace (`runplot`) and corner covariance posterior plot (`cornerplot`).
+    4. Computes model visibilities for XX and YY polarization baselines using Galario.
+    5. Calculates residual visibilities ($V_{\text{obs}} - V_{\text{mod}}$) and writes them
+       into temporary CASA Measurement Sets (`.residual.ms`).
+    6. Runs CASA `tclean` imaging and primary beam correction (`impbcor`) on both data and residuals.
+    7. Evaluates the 2D model sky brightness map and plots a 3-panel comparison figure
+       (Observed Data, Best-Fit Model, Residual Map) in $\text{MJy}/\text{sr}$.
+    8. Generates a second 3-panel figure featuring model surface brightness contour overlays.
+    9. Compiles all figures into a multipage PDF (`./output/<fittype>_plots.pdf`).
+    """
+    parser = argparse.ArgumentParser(
+        description="Visualize Dynesty results, compute visibility residuals, and generate CASA CLEAN images."
+    )
+    parser.add_argument("fittype", type=str, help="Model configuration identifier (e.g. 'twod_gaussring').")
+    pargs = parser.parse_args()
 
     fittype = pargs.fittype
 
-    logfile = './output/'+fittype+'_dynesty.log'
-    logging.basicConfig(filename=logfile, filemode='a', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S', force=True)
+    logfile = './output/' + fittype + '_dynesty.log'
+    logging.basicConfig(
+        filename=logfile,
+        filemode='a',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        force=True
+    )
     logging.info("==========Visualization Output==========")
     logging.info('Fittype: %s', fittype)
 
-    check_file = './output/'+fittype+'_checkpoint.save'
+    # --------------------------------------------------------------------------
+    # 1. Restore Dynesty Checkpoint & Parameter Posterior Analysis
+    # --------------------------------------------------------------------------
+    check_file = './output/' + fittype + '_checkpoint.save'
     sampler = DynamicNestedSampler.restore(check_file)
     res = sampler.results
 
@@ -85,19 +173,21 @@ def main():
     pars_bf = np.zeros(ndim)
     logz = res.logz[-1]
     weights = np.exp(res.logwt - logz)
+    
+    # Calculate 16th, 50th (median), and 84th percentiles; assign median to pars_bf
     for i in range(ndim):
-    # Calculate 16th, 50th (median), and 84th percentiles and save to pars_bf
         quantiles = dyfunc.quantile(res.samples[:, i], [0.159, 0.5, 0.841], weights=weights)
         pars_bf[i] = quantiles[1]
     logging.info(f"Best fit parameters: {pars_bf}")
 
-    pdf_plot = './output/'+fittype+'_plots.pdf'
+    pdf_plot = './output/' + fittype + '_plots.pdf'
     pp = PdfPages(pdf_plot)
     logging.info(f'Plot File: {pdf_plot}')
 
-##################################################################################################################
-
-    # summary plot
+    # --------------------------------------------------------------------------
+    # 2. Dynesty Run Summary & Corner Plots
+    # --------------------------------------------------------------------------
+    # Summary plot: Live points, log-evidence evolution, and posterior weights
     fig, axes = dyplot.runplot(res)
     fig.tight_layout()
     pp.savefig(fig)
@@ -108,7 +198,7 @@ def main():
     logging.info(f"Non-zero weight samples: {np.count_nonzero(weights)}")
     logging.info(f"Max weight / Sum weight: {np.max(weights) / np.sum(weights):.4f}")
         
-    # corner plot
+    # Corner plot: 1D marginal posteriors and 2D joint covariance contours
     fig, axes = dyplot.cornerplot(
         res, labels=labels, quantiles=[0.159, 0.5, 0.841],
         color='dodgerblue', show_titles=True
@@ -117,8 +207,9 @@ def main():
     plt.close(fig)
     logging.info('Successfully saved the corner plot...')
 
-##################################################################################################################
-    #vis plot
+    # --------------------------------------------------------------------------
+    # 3. Load Observed Visibilities for Residual Calculation
+    # --------------------------------------------------------------------------
     ms = './casa_dir/M95_C5+C2_cont93.ms'
     msx = './casa_dir/M95_C5+C2_cont93_trimmmedXX.ms'
     msy = './casa_dir/M95_C5+C2_cont93_trimmmedYY.ms'
@@ -127,38 +218,37 @@ def main():
     data_imgname = './casa_dir/M95_cont93GHz_auto'
     resid_imgname = './casa_dir/M95_cont93GHz_residual'
 
-    u_datx, v_datx, Re_datx, Im_datx, w_datx = np.require(np.loadtxt(msx+'.uvtable.txt', unpack=True), requirements='C')
-    wavelength = 299792458/93e9
+    # Load XX baseline visibilities
+    u_datx, v_datx, Re_datx, Im_datx, w_datx = np.require(np.loadtxt(msx + '.uvtable.txt', unpack=True), requirements='C')
+    wavelength = 299792458 / 93e9
     u_datx /= wavelength
     v_datx /= wavelength
+    vis_datx = np.array(Re_datx + 1j * Im_datx, dtype=np.complex256)
 
-    vis_datx = np.array(Re_datx + 1j*Im_datx, dtype=np.complex256)
-
-    u_daty, v_daty, Re_daty, Im_daty, w_daty = np.require(np.loadtxt(msy+'.uvtable.txt', unpack=True), requirements='C')
+    # Load YY baseline visibilities
+    u_daty, v_daty, Re_daty, Im_daty, w_daty = np.require(np.loadtxt(msy + '.uvtable.txt', unpack=True), requirements='C')
     u_daty /= wavelength
     v_daty /= wavelength
+    vis_daty = np.array(Re_daty + 1j * Im_daty, dtype=np.complex256)
 
-    vis_daty = np.array(Re_daty + 1j*Im_daty, dtype=np.complex256)
-
-##################################################################################################################
-
+    # Compute Fourier grid dimensions
     nxy, dxy = get_image_size(u_datx, v_datx, verbose=True)
-    Rmin = 0
-    dR = 0.0025
-    nR = 10000 #stealing the values that I used for the radius vector when I performed the fit
-
     args_vis = (nxy, dxy)
     vis_x_dat = (u_datx, v_datx, Re_datx, Im_datx, w_datx)
 
-    logging.info(fittype)
+    # Sample best-fit model visibilities using Galario
+    logging.info('Fittype: %s', fittype)
     model = model_prof(pars_bf, args_vis, vis_x_dat, 'vis', fittype)
-    logging.info('successfully loaded in model visibilities for plotting')
+    logging.info('Successfully computed best fit model visibilities...')
 
+    # Compute residual complex visibilities
     resid_visx = vis_datx - model
     resid_visy = vis_daty - model
+    logging.info('Residual visibilities calculated...')
 
-    logging.info('Residual visibilities calculated')
-
+    # --------------------------------------------------------------------------
+    # 4. Implant Residual Visibilities into CASA Measurement Sets
+    # --------------------------------------------------------------------------
     tb = table()
 
     tb.open(msx)
@@ -169,27 +259,31 @@ def main():
     implant_visx = np.reshape(resid_visx, msdata_shape)
     implant_visy = np.reshape(resid_visy, msdata_shape)
 
-    #Do once for XX corr
-    os.system('rm -rf '+msx+'.residual.ms')
-    os.system('cp -R '+msx+' '+msx+'.residual.ms')
-    tb.open(msx+'.residual.ms', nomodify=False)
+    # Write residuals for XX polarization
+    os.system('rm -rf ' + msx + '.residual.ms')
+    os.system('cp -R ' + msx + ' ' + msx + '.residual.ms')
+    tb.open(msx + '.residual.ms', nomodify=False)
     tb.putcol('DATA', implant_visx)
-    tb.flush() #pushes changes to disk
+    tb.flush()  # Commit changes to disk
     tb.close()
 
-    #Repeat for YY corr. The fit was done to the XX data, but we want both correlations in order to increase SNR in the fitted image. 
-    os.system('rm -rf '+msy+'.residual.ms')
-    os.system('cp -R '+msy+' '+msy+'.residual.ms')
-    tb.open(msy+'.residual.ms', nomodify=False)
+    # Write residuals for YY polarization (increases SNR in synthesized image)
+    os.system('rm -rf ' + msy + '.residual.ms')
+    os.system('cp -R ' + msy + ' ' + msy + '.residual.ms')
+    tb.open(msy + '.residual.ms', nomodify=False)
     tb.putcol('DATA', implant_visy)
-    tb.flush() #pushes changes to disk
+    tb.flush()  # Commit changes to disk
     tb.close()
 
-    logging.info('Residuals put into .residual.ms')
+    logging.info('Residual data put into .residual.ms')
 
-    os.system('rm -rf '+data_imgname+'.*')
-
-    tclean(vis=ms,
+    # --------------------------------------------------------------------------
+    # 5. CASA tclean Deconvolution and Primary Beam Correction
+    # --------------------------------------------------------------------------
+    # Clean observed data
+    os.system('rm -rf ' + data_imgname + '.*')
+    tclean(
+        vis=ms,
         datacolumn='data',
         imagename=data_imgname,
         imsize=[1440, 1440],
@@ -203,11 +297,13 @@ def main():
         niter=10000,
         interactive=False,
         threshold='5.52e-5 Jy',
-        mask='circle[[720pix,722pix],125pix]')
+        mask='circle[[720pix,722pix],125pix]'
+    )
 
-    os.system('rm -rf '+resid_imgname+'.*')
-
-    tclean(vis=[msx+'.residual.ms', msy+'.residual.ms'],
+    # Clean residual visibilities
+    os.system('rm -rf ' + resid_imgname + '.*')
+    tclean(
+        vis=[msx + '.residual.ms', msy + '.residual.ms'],
         datacolumn='data',
         imagename=resid_imgname,
         imsize=[1440, 1440],
@@ -221,51 +317,57 @@ def main():
         niter=10000,
         interactive=False,
         threshold='5.73e-5 Jy',
-        mask='circle[[720pix,722pix],125pix]')
+        mask='circle[[720pix,722pix],125pix]'
+    )
 
-    os.system('rm -rf '+data_imgname+'.image.pbcor')
-    os.system('rm -rf '+data_imgname+'.image.pbcor.subim')
-    os.system('rm -rf '+data_imgname+'.fits')
-    os.system('rm -rf '+resid_imgname+'.image.pbcor')
-    os.system('rm -rf '+resid_imgname+'.image.pbcor.subim')
-    os.system('rm -rf '+resid_imgname+'.fits')
+    # Primary beam correction and FITS image export
+    os.system('rm -rf ' + data_imgname + '.image.pbcor')
+    os.system('rm -rf ' + data_imgname + '.image.pbcor.subim')
+    os.system('rm -rf ' + data_imgname + '.fits')
+    os.system('rm -rf ' + resid_imgname + '.image.pbcor')
+    os.system('rm -rf ' + resid_imgname + '.image.pbcor.subim')
+    os.system('rm -rf ' + resid_imgname + '.fits')
 
     for img in [data_imgname, resid_imgname]:
-        impbcor(img+'.image', pbimage=img+'.pb', outfile=img+'.image.pbcor')
-        imsubimage(img+'.image.pbcor', region=region_cut, outfile=img+'.image.pbcor.subim')
-        exportfits(img+'.image.pbcor.subim', fitsimage=img+'.fits', dropdeg=True)
+        impbcor(img + '.image', pbimage=img + '.pb', outfile=img + '.image.pbcor')
+        imsubimage(img + '.image.pbcor', region=region_cut, outfile=img + '.image.pbcor.subim')
+        exportfits(img + '.image.pbcor.subim', fitsimage=img + '.fits', dropdeg=True)
 
-##################################################################################################################
-    logging.info('tcleaning done')
+    logging.info('CASA tcleaning data and residual data done...')
 
-    data_wcs, data_plot = img_prepper(data_imgname+'.fits')
-    resid_wcs, resid_plot = img_prepper(resid_imgname+'.fits')
+    # --------------------------------------------------------------------------
+    # 6. Generate 2D Model Sky Map & Multi-Panel Comparison Figures
+    # --------------------------------------------------------------------------
+    data_wcs, data_plot = img_prepper(data_imgname + '.fits')
+    resid_wcs, resid_plot = img_prepper(resid_imgname + '.fits')
 
-    #find fitted params for making the model
-    #pos = np.loadtxt(fit_pos_array)
-    #ndim=pos.shape[1]
-    #medianfit = [np.percentile(pos[:, i], 50) for i in range(ndim)]
-    #find the data image properties for making the model
-    stealhdr = fits.open(data_imgname+'.fits')[0].header
+    # Extract pixel grid properties from the generated data FITS image header
+    stealhdr = fits.open(data_imgname + '.fits')[0].header
     numpix = stealhdr['NAXIS2']
-    pixarcsec = stealhdr['CDELT2']*3600
+    pixarcsec = stealhdr['CDELT2'] * 3600
 
     args_plot = (numpix, pixarcsec)
 
-    logging.info(fittype)
+    logging.info('Fittype: %s', fittype)
     ring_model = model_prof(pars_bf, args_plot, vis_x_dat, 'plot', fittype)
-    logging.info('successfully loaded in ring model for plotting')
+    logging.info('Successfully computed model for plotting')
 
-    ring_model_plot = Cutout2D(ring_model, SkyCoord('10h43m57.75s', '11:42:13.34deg', frame='icrs'), [40*u.arcsecond,40*u.arcsecond], wcs=data_wcs).data
+    # Crop model image to match the 40" x 40" data cutout
+    ring_model_plot = Cutout2D(
+        ring_model,
+        SkyCoord('10h43m57.75s', '11:42:13.34deg', frame='icrs'),
+        [40 * u.arcsecond, 40 * u.arcsecond],
+        wcs=data_wcs
+    ).data
 
-    #convert all from Jy/sr to MJy/sr
+    # Convert surface brightness from Jy/sr to MJy/sr (1 MJy = 10^6 Jy)
     data_plot /= 1e6
     resid_plot /= 1e6
     ring_model_plot /= 1e6
 
-    fig = plt.figure(figsize=(24,8))
+    # --- Figure 1: Side-by-Side Comparison (Data, Model, Residuals) ---
+    fig = plt.figure(figsize=(24, 8))
 
-    #plot each, set plot labels and individual colorbars (necessary for plt3).
     ax1 = plt.subplot(131, projection=data_wcs)
     im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
@@ -281,34 +383,26 @@ def main():
     ax3.text(5, 5, 'CLEAN Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
-    #Mess with axis labels
-    axes=[ax1, ax2, ax3]
+    # Format celestial axis labels
+    axes = [ax1, ax2, ax3]
     for ax in axes:
         if ax != ax1:
             ax.set_ylabel(r'', size=0)
             ax.coords[1].set_ticklabel(size=0)
         else:
-            ax.set_ylabel(r"Declination (J2000)", size=22,labelpad=1)
+            ax.set_ylabel(r"Declination (J2000)", size=22, labelpad=1)
         if ax != ax2:
             ax.set_xlabel(r'', size=0)
         else:
             ax.set_xlabel(r"Right Ascension (J2000)", size=22)
 
-    #I wanted to play around with adding contours, but the difference in image noise is proving problematic. Need to fix that before these will be helpful. 
-    #ax1.contour(data_plot, data_plot, colors='w', transform=ax1.get_transform(data_wcs), levels=2.15e-5/jybm_to_jysr('modelling/cont93GHz/M95_cont93GHz.fits')/1e6*np.array([2.5, 4, 6]), zorder=10)
-    #ax3.contour(resid_plot, resid_plot, colors='yellow', transform=ax3.get_transform(resid_wcs), levels=2.1e-5/jybm_to_jysr('modelling/cont93GHz/M95_cont93GHz_residual.fits')/1e6*np.array([3, 9]), zorder=5)
-
     fig.suptitle("93GHZ Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
-    fig.subplots_adjust(hspace=0.1,wspace=0.1)
-
+    fig.subplots_adjust(hspace=0.1, wspace=0.1)
     pp.savefig()
 
-##################################################################################################################
-    #vis plot contoured
+    # --- Figure 2: Comparison with Model Contour Overlays ---
+    fig = plt.figure(figsize=(24, 8))
 
-    fig = plt.figure(figsize=(24,8))
-
-    #plot each, set plot labels and individual colorbars (necessary for plt3).
     ax1 = plt.subplot(131, projection=data_wcs)
     im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
@@ -325,37 +419,30 @@ def main():
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     peak_flux = np.percentile(data_plot, 99.95)
-    #print(peak_flux)
 
-    ax1.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax1.get_transform(data_wcs), levels=peak_flux*np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax2.contour(ring_model_plot, ring_model_plot, colors='k', transform=ax2.get_transform(data_wcs), levels=peak_flux*np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax3.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax3.get_transform(data_wcs), levels=peak_flux*np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    # Overlay model brightness contours at 20%, 40%, 60%, 80%, and 95% of peak intensity
+    ax1.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax1.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax2.contour(ring_model_plot, ring_model_plot, colors='k', transform=ax2.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax3.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax3.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
 
-    #Mess with axis labels
-    axes=[ax1, ax2, ax3]
     for ax in axes:
         if ax != ax1:
             ax.set_ylabel(r'', size=0)
             ax.coords[1].set_ticklabel(size=0)
         else:
-            ax.set_ylabel(r"Declination (J2000)", size=22,labelpad=1)
+            ax.set_ylabel(r"Declination (J2000)", size=22, labelpad=1)
         if ax != ax2:
             ax.set_xlabel(r'', size=0)
         else:
             ax.set_xlabel(r"Right Ascension (J2000)", size=22)
 
-    #I wanted to play around with adding contours, but the difference in image noise is proving problematic. Need to fix that before these will be helpful. 
-    #ax1.contour(data_plot, data_plot, colors='w', transform=ax1.get_transform(data_wcs), levels=2.15e-5/jybm_to_jysr('modelling/cont93GHz/M95_cont93GHz.fits')/1e6*np.array([2.5, 4, 6]), zorder=10)
-    #ax3.contour(resid_plot, resid_plot, colors='yellow', transform=ax3.get_transform(resid_wcs), levels=2.1e-5/jybm_to_jysr('modelling/cont93GHz/M95_cont93GHz_residual.fits')/1e6*np.array([3, 9]), zorder=5)
-
     fig.suptitle("93GHZ Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
-    fig.subplots_adjust(hspace=0.1,wspace=0.1)
+    fig.subplots_adjust(hspace=0.1, wspace=0.1)
 
     pp.savefig()
-
     pp.close()
 
     logging.info('Done!')
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()
