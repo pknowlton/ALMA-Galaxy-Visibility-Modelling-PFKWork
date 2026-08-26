@@ -135,6 +135,77 @@ def twod_gauss1blob_ptform(u):
 
 
 #########################
+### 2D Gaussian Ring + 1 Gaussian Blob (2 Peaks)
+#########################
+
+def twod_gauss1blob_2peak_ptform(u):
+    """
+    Prior transform for the 2D Gaussian Ring + 1 Gaussian Blob with 2 Peaks (13 parameters).
+
+    Transforms unit hypercube coordinates $u \in [0, 1]^{13}$ into physical parameters
+    for a ring profile superimposed with a single blob composed of two concentric Gaussian
+    components with distinct peaks and widths, where Width 2 is constrained to be narrower than Width 1.
+
+    Parameters
+    ----------
+    u : array_like, shape (13,)
+        Normalized coordinates on the unit hypercube ($u_i \in [0, 1]$).
+        Order of parameters:
+            0-6:  Ring parameters (Peak, Width, Radius, Inc, PA, dRA, dDec)
+            7:    Blob Peak 1 log10(Jy/sr)
+            8:    Blob Width 1 (arcsec)
+            9:    Blob Peak 2 log10(Jy/sr)
+            10:   Blob Width 2 (arcsec, narrower than Width 1)
+            11:   Blob radial distance from ring center (arcsec)
+            12:   Blob azimuthal position angle (degrees)
+
+    Returns
+    -------
+    v : numpy.ndarray, shape (13,)
+        Physical model parameters. Prior ranges:
+            - Ring Peak:       log(Jy/sr)
+            - Ring Width:      arcsec      
+            - Ring Radius:     arcsec      
+            - Inclination:     degrees     
+            - Position Angle:  degrees     
+            - Offset RA:       arcsec      
+            - Offset Dec:      arcsec      
+            - Blob Peak 1:     log(Jy/sr)  
+            - Blob Width 1:    arcsec      
+            - Blob Peak 2:     log(Jy/sr)  
+            - Blob Width 2:    arcsec      
+            - Blob Distance:   arcsec      
+            - Blob Angle:      degrees     
+    """
+    u = np.asarray(u)
+    prior_ranges = np.array([
+        [-5, 15],   # Ring Peak [log(Jy/sr)]
+        [0, 10],    # Ring Width [arcsec]
+        [0, 20],    # Ring Rad [arcsec]
+        [0, 90],    # Inclination [deg]
+        [-10, 10],  # Position Angle [deg]
+        [-5, 5],    # Offset RA [arcsec]
+        [-5, 5],    # Offset Dec [arcsec]
+        [-5, 15],   # Blob Peak 1 [log(Jy/sr)]
+        [0, 0.6],   # Blob Width 1 [arcsec]
+        [-5, 15],   # Blob Peak 2 [log(Jy/sr)]
+        [0, 0.6],   # Blob Width 2 [arcsec]
+        [5, 8],     # Blob Dist [arcsec]
+        [150, 200]  # Blob Angle [deg]
+    ], dtype=float)
+
+    low = prior_ranges[:, 0]
+    high = prior_ranges[:, 1]
+
+    v = low + u * (high - low)
+    
+    # Constrain Width 2 to always be narrower than Width 1
+    v[10] = prior_ranges[10, 0] + u[10] * (v[8] - prior_ranges[10, 0])
+    
+    return v
+
+
+#########################
 ### 2D Gaussian Ring + 3 Gaussian Blobs
 #########################
 
@@ -181,15 +252,15 @@ def twod_gauss3blob_ptform(u):
         [-5, 5],    # Offset RA [arcsec]
         [-5, 5],    # Offset Dec [arcsec]
         [-5, 15],   # Blob 1 Peak [log(Jy/sr)]
-        [0, 1],   # Blob 1 Width [arcsec]
+        [0, 0.6],   # Blob 1 Width [arcsec]
         [5, 10],     # Blob 1 Dist [arcsec]
         [150, 200], # Blob 1 Angle [deg]
         [-5, 15],   # Blob 2 Peak [log(Jy/sr)]
-        [0, 1],   # Blob 2 Width [arcsec]
+        [0, 0.6],   # Blob 2 Width [arcsec]
         [5, 10],     # Blob 2 Dist [arcsec]
         [330, 380], # Blob 2 Angle [deg]
         [-5, 15],   # Blob 3 Peak [log(Jy/sr)]
-        [0, 1],   # Blob 3 Width [arcsec]
+        [0, 0.6],   # Blob 3 Width [arcsec]
         [5, 10],     # Blob 3 Dist [arcsec]
         [140, 190]  # Blob 3 Angle [deg]
     ], dtype=float)
