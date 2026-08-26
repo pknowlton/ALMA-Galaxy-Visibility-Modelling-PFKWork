@@ -38,6 +38,7 @@ from dynesty import DynamicNestedSampler
 from dynesty import utils as dyfunc
 from dynesty import plotting as dyplot
 from model_prof import model_prof, model_addon
+from radec_calc import sun_radec, dynest_radec, make_model_wcs
 from matplotlib.backends.backend_pdf import PdfPages
 import logging
 import corner
@@ -112,7 +113,7 @@ def img_prepper(fitsimg):
     # Convert image from Jy/beam to Jy/sr and crop around galaxy center
     im_plot = Cutout2D(im.data / conv, center, box_bkg, wcs=im_wcs)
 
-    return im_wcs, im_plot.data
+    return im_plot.wcs, im_plot.data
 
 ##################################################################################################################
 ##################################################################################################################
@@ -338,32 +339,49 @@ def main():
     # --------------------------------------------------------------------------
     # 6. Generate 2D Model Sky Map & Multi-Panel Comparison Figures
     # --------------------------------------------------------------------------
-    data_wcs, data_plot = img_prepper(data_imgname + '.fits')
-    resid_wcs, resid_plot = img_prepper(resid_imgname + '.fits')
+    data_wcs, data_plot, = img_prepper(data_imgname + '.fits')
+    resid_wcs, resid_plot, = img_prepper(resid_imgname + '.fits')
 
     # Extract pixel grid properties from the generated data FITS image header
     stealhdr = fits.open(data_imgname + '.fits')[0].header
     numpix = stealhdr['NAXIS2']
     pixarcsec = stealhdr['CDELT2'] * 3600
 
-    args_plot = (numpix, pixarcsec)
+    #args_plot = (numpix, pixarcsec)
+    dxy_arcsec = dxy * 206265
+    args_plot = (nxy, dxy_arcsec)
+    logging.info(f'Parameters for model WCS: {args_plot}')
 
     logging.info('Fittype: %s', fittype)
     ring_model = model_prof(pars_bf, args_plot, vis_x_dat, 'plot', fittype)
     logging.info('Successfully computed model for plotting')
 
+    ngc3351 = SkyCoord('10h43m57.75s', '+11d42m13.34s', frame='icrs')
+    center_mod = SkyCoord((ngc3351.ra.deg - (pars_bf[5]/3600)), (ngc3351.dec.deg - (pars_bf[6]/3600)), unit='deg', frame='icrs')
+
+    mod_wcs = make_model_wcs(center_mod.ra.deg, center_mod.dec.deg, dxy_arcsec, shape=(nxy, nxy))
+
     # Crop model image to match the 40" x 40" data cutout
-    ring_model_plot = Cutout2D(
-        ring_model,
-        SkyCoord('10h43m57.75s', '11:42:13.34deg', frame='icrs'),
-        [40 * u.arcsecond, 40 * u.arcsecond],
-        wcs=data_wcs
-    ).data
+
+    #ring_model_plot = Cutout2D(
+        #ring_model,
+        #SkyCoord('10h43m57.75s', '11:42:13.34deg', frame='icrs'),
+        #[40 * u.arcsecond, 40 * u.arcsecond],
+        #wcs=data_wcs
+    #).data
 
     # Convert surface brightness from Jy/sr to MJy/sr (1 MJy = 10^6 Jy)
     data_plot /= 1e6
     resid_plot /= 1e6
-    ring_model_plot /= 1e6
+    ring_model /= 1e6
+
+    # Crop model image to match the 40" x 40" data cutout
+    cutout_mod = Cutout2D(
+        ring_model,
+        ngc3351,
+        [40 * u.arcsecond, 40 * u.arcsecond],
+        wcs=mod_wcs
+    )
 
     # --- Figure 1: Side-by-Side Comparison (Data, Model, Residuals) ---
     fig = plt.figure(figsize=(24, 8))
@@ -373,8 +391,8 @@ def main():
     ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
-    ax2 = plt.subplot(132, projection=data_wcs)
-    im2 = ax2.imshow(ring_model_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
+    ax2 = plt.subplot(132, projection=cutout_mod.wcs)
+    im2 = ax2.imshow(cutout_mod.data, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax2.text(5, 5, 'Model Sky Intensity', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
@@ -408,8 +426,8 @@ def main():
     ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
-    ax2 = plt.subplot(132, projection=data_wcs)
-    im2 = ax2.imshow(ring_model_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
+    ax2 = plt.subplot(132, projection=cutout_mod.wcs)
+    im2 = ax2.imshow(cutout_mod.data, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax2.text(5, 5, 'Model Sky Intensity', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
@@ -418,12 +436,17 @@ def main():
     ax3.text(5, 5, 'CLEAN Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
+    axes = [ax1, ax2, ax3]
+
+    for ax in axes:
+        ax.set_autoscale_on(False)
+
     peak_flux = np.percentile(data_plot, 99.95)
 
     # Overlay model brightness contours at 20%, 40%, 60%, 80%, and 95% of peak intensity
-    ax1.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax1.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax2.contour(ring_model_plot, ring_model_plot, colors='k', transform=ax2.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax3.contour(ring_model_plot, ring_model_plot, colors='w', transform=ax3.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax1.contour(cutout_mod.data, colors='w', transform=ax1.get_transform(cutout_mod.wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax2.contour(cutout_mod.data, colors='k', transform=ax2.get_transform(cutout_mod.wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax3.contour(cutout_mod.data, colors='w', transform=ax3.get_transform(cutout_mod.wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
 
     for ax in axes:
         if ax != ax1:
@@ -438,8 +461,57 @@ def main():
 
     fig.suptitle("93GHZ Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
     fig.subplots_adjust(hspace=0.1, wspace=0.1)
-
     pp.savefig()
+
+    # --- Figure 3: Comparison with Original Cluster Positions from Sun et al. 2024 ---
+    fig = plt.figure(figsize=(24, 8))
+
+    ax1 = plt.subplot(131, projection=data_wcs)
+    im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
+    ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
+    cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
+
+    ax2 = plt.subplot(132, projection=cutout_mod.wcs)
+    im2 = ax2.imshow(cutout_mod.data, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
+    ax2.text(5, 5, 'Model Sky Intensity', color='w', fontsize=16)
+    cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
+
+    ax3 = plt.subplot(133, projection=data_wcs)
+    im3 = ax3.imshow(resid_plot, vmin=np.percentile(resid_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
+    ax3.text(5, 5, 'CLEAN Residual Visibilities', color='black', fontsize=16)
+    cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
+
+    ymc_ids = [15, 6, 18] #ideally this won't be hardcoded
+    sun_coords = sun_radec(ymc_ids)
+    dynest_coords = dynest_radec(pars_bf, fittype)
+
+    sun_ra, sun_dec = zip(*sun_coords)
+    dynest_ra, dynest_dec = zip(*dynest_coords)
+
+    axes = [ax1, ax2, ax3]
+
+    for ax in axes:
+        ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2)
+        ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2)
+        #ax.scatter(ngc3351.ra.deg, ngc3351.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='x', s=120, linewidth=2)
+        #ax.scatter(center_mod.ra.deg, center_mod.dec.deg, transform=ax.get_transform('world'), color='magenta', marker='x', s=120, linewidth=2)
+
+
+    for ax in axes:
+        if ax != ax1:
+            ax.set_ylabel(r'', size=0)
+            ax.coords[1].set_ticklabel(size=0)
+        else:
+            ax.set_ylabel(r"Declination (J2000)", size=22, labelpad=1)
+        if ax != ax2:
+            ax.set_xlabel(r'', size=0)
+        else:
+            ax.set_xlabel(r"Right Ascension (J2000)", size=22)
+
+    fig.suptitle("93GHZ Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
+    fig.subplots_adjust(hspace=0.1, wspace=0.1)
+    pp.savefig()
+
     pp.close()
 
     logging.info('Done!')
