@@ -5,3 +5,4 @@ __pycache__/
 *$py.class
 .DS_Store
 .ipynb_checkpoints/
+nested_samp_test/
