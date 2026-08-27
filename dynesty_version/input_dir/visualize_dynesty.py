@@ -356,10 +356,8 @@ def main():
     ring_model = model_prof(pars_bf, args_plot, vis_x_dat, 'plot', fittype)
     logging.info('Successfully computed model for plotting')
 
-    ngc3351 = SkyCoord('10h43m57.75s', '+11d42m13.34s', frame='icrs')
-    center_mod = SkyCoord((ngc3351.ra.deg - (pars_bf[5]/3600)), (ngc3351.dec.deg - (pars_bf[6]/3600)), unit='deg', frame='icrs')
-
-    mod_wcs = make_model_wcs(center_mod.ra.deg, center_mod.dec.deg, dxy_arcsec, shape=(nxy, nxy))
+    ngc3351 = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
+    mod_wcs = make_model_wcs(ngc3351.ra.deg, ngc3351.dec.deg, dxy_arcsec, shape=(nxy, nxy))
 
     # Crop model image to match the 40" x 40" data cutout
 

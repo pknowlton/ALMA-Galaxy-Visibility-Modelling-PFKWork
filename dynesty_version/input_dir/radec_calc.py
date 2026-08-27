@@ -25,13 +25,13 @@ def dynest_radec(pars, fittype):
 
     logging.info('Fittype: %s', fittype)
 
-    ngc3351 = SkyCoord('10h43m57.75s', '+11d42m13.34s', frame='icrs')
+    ngc3351 = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
 
     if fittype == 'twod_gauss1blob':
         
         peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1 = pars
 
-        #ngc3351 = ngc3351_old.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        center = ngc3351.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
 
         dynest_coords = np.zeros((1, 2))
 
@@ -39,7 +39,7 @@ def dynest_radec(pars, fittype):
         ap_ang_b1 = (360 - co_ang_b1) * u.deg
         ap_dist_b1 = dist_b1 * u.arcsecond
 
-        radec_b1 = ngc3351.directional_offset_by(position_angle=ap_ang_b1, separation=ap_dist_b1)
+        radec_b1 = center.directional_offset_by(position_angle=ap_ang_b1, separation=ap_dist_b1)
         dynest_coords[0, 0] = radec_b1.ra.deg
         dynest_coords[0, 1] = radec_b1.dec.deg
 
@@ -47,13 +47,15 @@ def dynest_radec(pars, fittype):
         
         peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1 = pars
 
+        center = ngc3351.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+
         dynest_coords = np.zeros((1, 2))
 
         co_ang_b1 = ang_b1 - posangle
         ap_ang_b1 = (360 - co_ang_b1) * u.deg
         ap_dist_b1 = dist_b1 * u.arcsecond
 
-        radec_b1 = ngc3351.directional_offset_by(position_angle=ap_ang_b1, separation=ap_dist_b1)
+        radec_b1 = center.directional_offset_by(position_angle=ap_ang_b1, separation=ap_dist_b1)
         dynest_coords[0, 0] = radec_b1.ra.deg
         dynest_coords[0, 1] = radec_b1.dec.deg
 
@@ -61,13 +63,15 @@ def dynest_radec(pars, fittype):
         
         peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars
 
+        center = ngc3351.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+
         dynest_coords = np.zeros((3, 2))
 
         co_ang_b1 = ang_b1 - posangle
         ap_ang_b1 = (360 - co_ang_b1) * u.deg
         ap_dist_b1 = dist_b1 * u.arcsecond
 
-        radec_b1 = ngc3351.directional_offset_by(position_angle=ap_ang_b1, separation=ap_dist_b1)
+        radec_b1 = center.directional_offset_by(position_angle=ap_ang_b1, separation=ap_dist_b1)
         dynest_coords[0, 0] = radec_b1.ra.deg
         dynest_coords[0, 1] = radec_b1.dec.deg
 
@@ -75,7 +79,7 @@ def dynest_radec(pars, fittype):
         ap_ang_b2 = (360 - co_ang_b2) * u.deg
         ap_dist_b2 = dist_b2 * u.arcsecond
 
-        radec_b2 = ngc3351.directional_offset_by(position_angle=ap_ang_b2, separation=ap_dist_b2)
+        radec_b2 = center.directional_offset_by(position_angle=ap_ang_b2, separation=ap_dist_b2)
         dynest_coords[1, 0] = radec_b2.ra.deg
         dynest_coords[1, 1] = radec_b2.dec.deg
 
@@ -83,7 +87,7 @@ def dynest_radec(pars, fittype):
         ap_ang_b3 = (360 - co_ang_b3) * u.deg
         ap_dist_b3 = dist_b3 * u.arcsecond
 
-        radec_b3 = ngc3351.directional_offset_by(position_angle=ap_ang_b3, separation=ap_dist_b3)
+        radec_b3 = center.directional_offset_by(position_angle=ap_ang_b3, separation=ap_dist_b3)
         dynest_coords[2, 0] = radec_b3.ra.deg
         dynest_coords[2, 1] = radec_b3.dec.deg
 
