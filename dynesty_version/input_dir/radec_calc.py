@@ -25,13 +25,13 @@ def dynest_radec(pars, fittype):
 
     logging.info('Fittype: %s', fittype)
 
-    ngc3351_old = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
+    phase_cent = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
     
     if fittype == 'twod_gauss1blob':
         
         peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1 = pars
 
-        ngc3351 = ngc3351_old.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
 
         dynest_coords = np.zeros((1, 2))
 
@@ -47,7 +47,7 @@ def dynest_radec(pars, fittype):
         
         peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1 = pars
 
-        ngc3351 = ngc3351_old.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
 
         dynest_coords = np.zeros((1, 2))
 
@@ -63,7 +63,7 @@ def dynest_radec(pars, fittype):
         
         peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars
 
-        ngc3351 = ngc3351_old.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
 
         dynest_coords = np.zeros((3, 2))
 
