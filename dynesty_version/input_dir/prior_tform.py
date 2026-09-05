@@ -191,7 +191,7 @@ def twod_gauss1blob_2peak_ptform(u):
         [-5, 15],   # Blob Peak 2 [log(Jy/sr)]
         [0, 0.6],   # Blob Width 2 [arcsec]
         [5, 8],     # Blob Dist [arcsec]
-        [150, 200]  # Blob Angle [deg]
+        [168, 200]  # Blob Angle [deg]
     ], dtype=float)
 
     low = prior_ranges[:, 0]
