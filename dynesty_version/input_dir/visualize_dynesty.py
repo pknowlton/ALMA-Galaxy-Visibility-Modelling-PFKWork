@@ -115,7 +115,6 @@ def img_prepper(fitsimg):
     im_plot = Cutout2D(im.data / conv, center, box_bkg, wcs=im_wcs)
 
     return im_plot.wcs, im_plot.data
-    #return im_wcs, im_plot.data
 
 ##################################################################################################################
 ##################################################################################################################
@@ -363,35 +362,15 @@ def main():
     ring_model = model_prof(pars_bf, args_plot, vis_x_dat, 'plot', fittype)
     logging.info('Successfully computed model for plotting')
 
-    #ngc3351 = SkyCoord('10h43m57.75s', '+11d42m13.34s', frame='icrs')
     phase_center = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
-    #center_mod_mid = SkyCoord((ngc3351.ra.deg - (pars_bf[5]/3600)), (ngc3351.dec.deg - (pars_bf[6]/3600)), unit='deg', frame='icrs')
-    #center_mod = center_mod_mid.spherical_offsets_by(pars_bf[5] * u.arcsec, pars_bf[6] * u.arcsec)
 
-    #mod_wcs = make_model_wcs(phase_center.ra.deg, phase_center.dec.deg, dxy_arcsec, shape=(nxy, nxy))
-
-    # Crop model image to match the 40" x 40" data cutout
-
-    #ring_model_plot = Cutout2D(
-        #ring_model,
-        #SkyCoord('10h43m57.75s', '11:42:13.34deg', frame='icrs'),
-        #[40 * u.arcsecond, 40 * u.arcsecond],
-        #wcs=data_wcs
-    #).data
+    mod_wcs = make_model_wcs(phase_center.ra.deg, phase_center.dec.deg, pixarcsec, shape=(numpix, numpix))
+    logging.info(mod_wcs)
 
     # Convert surface brightness from Jy/sr to MJy/sr (1 MJy = 10^6 Jy)
     data_plot /= 1e6
     resid_plot /= 1e6
     ring_model /= 1e6
-
-    # Crop model image to match the 40" x 40" data cutout
-    #cutout_mod = Cutout2D(
-        #ring_model,
-        #ngc3351,
-        #[36 * u.arcsecond, 36 * u.arcsecond],
-        #wcs=mod_wcs
-        #wcs=data_wcs
-    #)
 
     # --- Figure 1: Side-by-Side Comparison (Data, Model, Residuals) ---
     fig = plt.figure(figsize=(24, 8))
@@ -401,7 +380,7 @@ def main():
     ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
-    ax2 = plt.subplot(132, projection=data_wcs)
+    ax2 = plt.subplot(132, projection=mod_wcs)
     im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax2.text(5, 5, 'Model Sky Intensity', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
@@ -436,7 +415,7 @@ def main():
     ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
-    ax2 = plt.subplot(132, projection=data_wcs)
+    ax2 = plt.subplot(132, projection=mod_wcs)
     im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax2.text(5, 5, 'Model Sky Intensity', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
@@ -454,19 +433,9 @@ def main():
     peak_flux = np.percentile(data_plot, 99.95)
 
     # Overlay model brightness contours at 20%, 40%, 60%, 80%, and 95% of peak intensity
-    ax1.contour(ring_model, colors='w', transform=ax1.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax2.contour(ring_model, colors='k', transform=ax2.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax3.contour(ring_model, colors='w', transform=ax3.get_transform(data_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-
-    ymc_ids = [15, 6, 18] #ideally this won't be hardcoded
-    sun_coords = sun_radec(ymc_ids)
-    dynest_coords = dynest_radec(pars_bf, fittype)
-
-    sun_ra, sun_dec = zip(*sun_coords)
-    dynest_ra, dynest_dec = zip(*dynest_coords)
-
-    #for ax in axes:
-        #ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2)
+    ax1.contour(ring_model, colors='w', transform=ax1.get_transform(mod_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax2.contour(ring_model, colors='k', transform=ax2.get_transform(mod_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
+    ax3.contour(ring_model, colors='w', transform=ax3.get_transform(mod_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
 
     for ax in axes:
         if ax != ax1:
@@ -491,7 +460,7 @@ def main():
     ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
-    ax2 = plt.subplot(132, projection=data_wcs)
+    ax2 = plt.subplot(132, projection=mod_wcs)
     im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax2.text(5, 5, 'Model Sky Intensity', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
@@ -501,13 +470,23 @@ def main():
     ax3.text(5, 5, 'CLEAN Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
+    ymc_ids = [15, 6, 18] #ideally this won't be hardcoded
+    sun_coords = sun_radec(ymc_ids)
+    dynest_coords = dynest_radec(pars_bf, fittype)
+
+    sun_ra, sun_dec = zip(*sun_coords)
+    dynest_ra, dynest_dec = zip(*dynest_coords)
+
     axes = [ax1, ax2, ax3]
+
+    ax1.scatter(461.0, 460.0, marker='x', s=200)
+    ax2.scatter(460.0, 460.0, marker='x', s=200)
+    ax3.scatter(461.0, 460.0, marker='x', s=200)
 
     for ax in axes:
         ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2)
         ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2)
         #ax.scatter(ngc3351.ra.deg, ngc3351.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='x', s=120, linewidth=2)
-        ax.scatter(461.0, 460.0, marker='x', s=200)
         ax.scatter(phase_center.ra.deg, phase_center.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='x', s=120, linewidth=2)
 
 

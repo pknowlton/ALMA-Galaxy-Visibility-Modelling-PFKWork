@@ -91,6 +91,12 @@ def dynest_radec(pars, fittype):
         dynest_coords[2, 0] = radec_b3.ra.deg
         dynest_coords[2, 1] = radec_b3.dec.deg
 
+    elif fittype == 'twod_gaussring':
+        #no blob coords, just plot the phase center for now
+        dynest_coords = np.zeros((1, 2))
+        dynest_coords[0, 0] = phase_cent.ra.deg
+        dynest_coords[0, 1] = phase_cent.dec.deg
+
     else:
         msg = f"Invalid fittype '{fittype}', please choose a valid fitting model, or add a new one into the code."
         logging.warning(msg)
@@ -100,12 +106,14 @@ def dynest_radec(pars, fittype):
 
     return dynest_coords
 
-def make_model_wcs(ra_center, dec_center, pixel_scale_arcsec, shape, projection="TAN"):
+def make_model_wcs(ra_center, dec_center, pixel_scale_arcsec, shape, projection="SIN"):
 
     ny, nx = shape
     pixel_scale_deg = pixel_scale_arcsec / 3600.0
     
     wcs = WCS(naxis=2)
+    # Set the image array shape (ny, nx)
+    wcs.array_shape = (ny, nx)
     # Reference pixel (1-indexed FITS convention; center of pixel array)
     wcs.wcs.crpix = [(nx + 1) / 2.0, (ny + 1) / 2.0]
     # Reference world coordinate at CRPIX
