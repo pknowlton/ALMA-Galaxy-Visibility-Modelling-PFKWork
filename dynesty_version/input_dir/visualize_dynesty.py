@@ -505,6 +505,92 @@ def main():
     fig.subplots_adjust(hspace=0.1, wspace=0.1)
     pp.savefig()
 
+    # --------------------------------------------------------------------------
+    # 7. Zoomed-In Blob Analysis & 1D Brightness Profiles (Model, Data, Residuals)
+    # --------------------------------------------------------------------------
+    # Cutout size around the modeled blob(s)
+    blob_box_size = [2 * u.arcsecond, 2 * u.arcsecond]
+
+    # Target images to plot across 3 individual PDF pages
+    zoom_targets = [
+        ('Model Sky Intensity', ring_model, mod_wcs),
+        ('Observed CLEAN Image', data_plot, data_wcs),
+        ('CLEAN Residual Visibilities', resid_plot, data_wcs)
+    ]
+
+    for target_name, img_arr, img_wcs in zoom_targets:
+        for b_idx, (b_ra, b_dec) in enumerate(dynest_coords):
+            blob_coord = SkyCoord(b_ra * u.deg, b_dec * u.deg, frame='icrs')
+            cutout = Cutout2D(img_arr, blob_coord, blob_box_size, wcs=img_wcs)
+            cut_data = cutout.data
+            cut_wcs = cutout.wcs
+
+            # Dynamic range tailored to capture the full brightness of the blob
+            vmin_zoom = np.percentile(cut_data, 1)
+            vmax_zoom = np.max(cut_data)
+
+            # Center pixel of the cutout corresponding to the dynest coordinate
+            cx_f, cy_f = cut_wcs.world_to_pixel(blob_coord)
+            cx = int(round(cx_f))
+            cy = int(round(cy_f))
+
+            # Bounds clamping to ensure 3-pixel slice stays within cutout
+            ny_cut, nx_cut = cut_data.shape
+            cy_clamp = np.clip(cy, 1, ny_cut - 2)
+            cx_clamp = np.clip(cx, 1, nx_cut - 2)
+
+            # 1D RA brightness profile: average of center row, row above, and row below
+            ra_profile = np.mean(cut_data[cy_clamp - 1 : cy_clamp + 2, :], axis=0)
+            x_indices = np.arange(nx_cut)
+            pixel_world_ra = cut_wcs.pixel_to_world(x_indices, np.full(nx_cut, cy_f))
+            ra_offsets_arcsec = pixel_world_ra.ra.wrap_at(180 * u.deg).arcsec - blob_coord.ra.wrap_at(180 * u.deg).arcsec
+
+            # 1D Dec brightness profile: average of center column, column left, and column right
+            dec_profile = np.mean(cut_data[:, cx_clamp - 1 : cx_clamp + 2], axis=1)
+            y_indices = np.arange(ny_cut)
+            pixel_world_dec = cut_wcs.pixel_to_world(np.full(ny_cut, cx_f), y_indices)
+            dec_offsets_arcsec = (pixel_world_dec.dec.deg - blob_coord.dec.deg) * 3600.0
+
+            # --- Layout: Left panel = 2D Zoomed Cutout; Right panels = 1D RA & Dec Profiles ---
+            fig = plt.figure(figsize=(24, 8))
+
+            # Panel 1: 2D Zoomed In Cutout
+            ax_img = plt.subplot(131, projection=cut_wcs)
+            im_zoom = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower', cmap='inferno', rasterized=True)
+            ax_img.text(5, 5, f'{target_name} (Zoom)', color='w', fontsize=16)
+            cbar_zoom = plt.colorbar(mappable=im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
+            cbar_zoom.set_label(r'Intensity (MJy/sr)', size=16)
+
+            # Marker for blob coordinate
+            ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='cyan', marker='+', s=150, linewidth=2)
+
+            ax_img.set_xlabel(r"Right Ascension (J2000)", size=20)
+            ax_img.set_ylabel(r"Declination (J2000)", size=20, labelpad=1)
+
+            # Panel 2: 1D RA Direction Brightness Profile
+            ax_ra = plt.subplot(132)
+            ax_ra.plot(ra_offsets_arcsec, ra_profile, color='crimson', lw=2.5)
+            ax_ra.axvline(0, color='gray', linestyle='--', alpha=0.7)
+            ax_ra.set_xlabel(r"$\Delta$RA Offset (arcsec)", size=20)
+            ax_ra.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
+            ax_ra.set_title(r"1D RA Profile ($\pm 1$ Dec pixel avg)", size=18)
+            ax_ra.grid(True, alpha=0.3, linestyle=':')
+
+            # Panel 3: 1D Dec Direction Brightness Profile
+            ax_dec = plt.subplot(133)
+            ax_dec.plot(dec_offsets_arcsec, dec_profile, color='dodgerblue', lw=2.5)
+            ax_dec.axvline(0, color='gray', linestyle='--', alpha=0.7)
+            ax_dec.set_xlabel(r"$\Delta$Dec Offset (arcsec)", size=20)
+            ax_dec.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
+            ax_dec.set_title(r"1D Dec Profile ($\pm 1$ RA pixel avg)", size=18)
+            ax_dec.grid(True, alpha=0.3, linestyle=':')
+
+            blob_label = f"Blob {b_idx + 1}" if len(dynest_coords) > 1 else "Blob"
+            fig.suptitle(f"{target_name} - {blob_label} Zoom ($2'' \\times 2''$)", size=26)
+            fig.subplots_adjust(hspace=0.2, wspace=0.25)
+            pp.savefig()
+            plt.close(fig)
+
     pp.close()
 
     logging.info('Done!')
