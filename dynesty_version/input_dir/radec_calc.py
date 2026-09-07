@@ -115,7 +115,7 @@ def make_model_wcs(ra_center, dec_center, pixel_scale_arcsec, shape, projection=
     # Set the image array shape (ny, nx)
     wcs.array_shape = (ny, nx)
     # Reference pixel (1-indexed FITS convention; center of pixel array)
-    wcs.wcs.crpix = [(nx + 1) / 2.0, (ny + 1) / 2.0]
+    wcs.wcs.crpix = [(nx / 2.0) + 1, (ny / 2.0) + 1]
     # Reference world coordinate at CRPIX
     wcs.wcs.crval = [ra_center, dec_center]
     # Pixel scale: RA step is negative so RA increases to the left

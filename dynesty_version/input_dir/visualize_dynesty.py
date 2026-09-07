@@ -350,7 +350,7 @@ def main():
     #numpix = stealhdr['NAXIS2']
     #pixarcsec = stealhdr['CDELT2'] * 3600
 
-    numpix = data_plot.shape[0]
+    numpix = data_plot.shape[0] + 1
     pixarcsec = data_wcs.wcs.cdelt[1]*3600
 
     args_plot = (numpix, pixarcsec)
@@ -479,9 +479,9 @@ def main():
 
     axes = [ax1, ax2, ax3]
 
-    ax1.scatter(461.0, 460.0, marker='x', s=200)
+    ax1.scatter(460.0, 459.0, marker='x', s=200)
     ax2.scatter(460.0, 460.0, marker='x', s=200)
-    ax3.scatter(461.0, 460.0, marker='x', s=200)
+    ax3.scatter(460.0, 459.0, marker='x', s=200)
 
     for ax in axes:
         ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2)
