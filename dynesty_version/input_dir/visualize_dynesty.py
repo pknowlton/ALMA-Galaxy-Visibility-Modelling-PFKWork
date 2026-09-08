@@ -531,8 +531,8 @@ def main():
 
             # Center pixel of the cutout corresponding to the dynest coordinate
             cx_f, cy_f = cut_wcs.world_to_pixel(blob_coord)
-            cx = int(round(cx_f))
-            cy = int(round(cy_f))
+            cx = int(round(float(cx_f)))
+            cy = int(round(float(cy_f)))
 
             # Bounds clamping to ensure 3-pixel slice stays within cutout
             ny_cut, nx_cut = cut_data.shape
