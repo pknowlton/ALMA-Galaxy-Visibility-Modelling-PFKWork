@@ -211,8 +211,54 @@ def twod_gauss1blob_2peak_ptform(u):
     return v
 
 
-def twod_gauss1blob_2peak_ptform(u):
-    
+#########################
+### 2D Gaussian Ring + 1 Gaussian Blob (2 Peaks, Double Pendulum)
+#########################
+
+def twod_gauss1blob_2peak_dp_ptform(u):
+    """
+    Prior transform for the 2D Gaussian Ring + 1 Gaussian Blob with 2 Peaks (Double Pendulum, 15 parameters).
+
+    Transforms unit hypercube coordinates $u \in [0, 1]^{15}$ into physical parameters
+    for a ring profile superimposed with a single clump having two separate emission peaks.
+    Peak 2 is parameterized relative to Peak 1: its distance from Peak 1 is constrained to $\le 2$ arcseconds,
+    and its angle relative to Peak 1 covers $[0, 360]^\circ$.
+
+    Parameters
+    ----------
+    u : array_like, shape (15,)
+        Normalized coordinates on the unit hypercube ($u_i \in [0, 1]$).
+        Order of parameters:
+            0-6:  Ring parameters (Peak, Width, Radius, Inc, PA, dRA, dDec)
+            7:    Blob Peak 1 log10(Jy/sr)
+            8:    Blob Width 1 (arcsec)
+            9:    Blob Dist 1 (arcsec, distance of Peak 1 from ring center)
+            10:   Blob Angle 1 (degrees, position angle of Peak 1 from ring center)
+            11:   Blob Peak 2 log10(Jy/sr)
+            12:   Blob Width 2 (arcsec)
+            13:   Blob Dist 2 (arcsec, separation of Peak 2 from Peak 1, max 2 arcsec)
+            14:   Blob Angle 2 (degrees, position angle of Peak 2 relative to Peak 1)
+
+    Returns
+    -------
+    v : numpy.ndarray, shape (15,)
+        Physical model parameters. Prior ranges:
+            - Ring Peak:       log(Jy/sr)
+            - Ring Width:      arcsec
+            - Ring Radius:     arcsec
+            - Inclination:     degrees
+            - Position Angle:  degrees
+            - Offset RA:       arcsec
+            - Offset Dec:      arcsec
+            - Blob Peak 1:     log(Jy/sr)
+            - Blob Width 1:    arcsec
+            - Blob Dist 1:     arcsec
+            - Blob Angle 1:    degrees
+            - Blob Peak 2:     log(Jy/sr)
+            - Blob Width 2:    arcsec
+            - Blob Dist 2:     arcsec (0 to 2 arcsec from Peak 1)
+            - Blob Angle 2:    degrees (0 to 360 deg from Peak 1)
+    """
     u = np.asarray(u)
     prior_ranges = np.array([
         [0, 8],   # Ring Peak [log(Jy/sr)]
@@ -227,7 +273,7 @@ def twod_gauss1blob_2peak_ptform(u):
         #[0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 2)
         #[0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 3)
         [5, 9],     # Blob Dist 1 [arcsec]
-        [168, 200]  # Blob Angle 1 [deg] (Blob 1)
+        [168, 200],  # Blob Angle 1 [deg] (Blob 1)
         #[350, 390]  # Blob Angle 1 [deg] (Blob 2)
         #[150, 168]  # Blob Angle 1 [deg] (Blob 3)
         [0, 9],   # Blob Peak 2 [log(Jy/sr)]

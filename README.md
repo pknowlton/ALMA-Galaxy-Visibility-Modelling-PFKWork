@@ -90,6 +90,7 @@ dynesty_version/
     ├── agy_run_dynesty.py                  # Main Dynesty sampling driver with multiprocessing Pool
     ├── model_prof.py                       # 2D parametric brightness models & Galario interface
     ├── prior_tform.py                      # Unit hypercube prior transformations for Dynesty
+    ├── radec_calc.py                       # Celestial coordinate conversions (Sun et al. clusters & model blobs)
     └── visualize_dynesty.py                # Post-fit imaging, CASA tclean, and PDF figure generation
 ```
 
@@ -128,6 +129,18 @@ python launch_headless_scratch.py ngc3351-gaussring-01 twod_gaussring
 
 This launches a headless container with 16 CPU cores, executes the full pipeline in node-local scratch space, and outputs results to `/arc/home/<user>/dynest_product_dir/<session_name>/`.
 
+### Supported Model Profiles (`fittype`)
+
+The pipeline implements multiple parametric models in `dynesty_version/input_dir/model_prof.py`:
+
+| `fittype` | Parameters ($N_{\text{dim}}$) | Description |
+| :--- | :---: | :--- |
+| `twod_gaussring` | 7 | Tilted, inclined elliptical Gaussian ring (Peak, Width, Radius, Inc, PA, $\Delta\alpha$, $\Delta\delta$). |
+| `twod_gauss1blob` | 11 | Gaussian ring superimposed with 1 localized Gaussian emission clump (polar distance and angle). |
+| `twod_gauss1blob_2peak` | 13 | Gaussian ring with 1 clump modeled as two concentric Gaussian components (core + envelope). |
+| `twod_gauss1blob_2peak_dp` | 15 | **"Double Pendulum" Model**: Gaussian ring with a clump consisting of two distinct peaks. Peak 1 is parameterized relative to the ring center, while Peak 2 is parameterized relative to Peak 1 (with separation constrained to $\le 2''$). |
+| `twod_gauss3blob` | 19 | Gaussian ring superimposed with 3 distinct compact clumps. |
+
 ---
 
 ## Output Data Products & Diagnostics
@@ -138,7 +151,8 @@ Upon completion, the output directory contains:
 | :--- | :--- |
 | `<fittype>_checkpoint.save` | Serialized Dynesty sampler state containing all nested samples, weights, and evidence estimates. |
 | `<fittype>_dynesty.log` | Text log containing live sampling progression, Bayesian log-evidence $\ln \mathcal{Z} \pm \sigma$, sampling efficiency, and parameter quantiles (16th, 50th, 84th percentiles). |
-| `<fittype>_plots.pdf` | Multipage PDF report containing:<br>• **Page 1**: Dynesty summary run plot (live points, evidence convergence, sample weights).<br>• **Page 2**: Posterior corner plot with 1D parameter marginals and 2D covariance contours.<br>• **Page 3**: 3-panel comparison (Observed CLEAN image, Model sky intensity, CLEAN residual visibilities) in $\text{MJy}/\text{sr}$.<br>• **Page 4**: 3-panel comparison with model contour overlays. |
+| `<fittype>_plots.pdf` | Multipage PDF report containing:<br>• **Page 1**: Dynesty summary run plot (live points, evidence convergence, sample weights).<br>• **Page 2**: Posterior corner plot with 1D parameter marginals and 2D covariance contours.<br>• **Page 3**: 3-panel comparison (Observed CLEAN image, Model sky intensity, CLEAN residual visibilities) in $\text{MJy}/\text{sr}$.<br>• **Page 4**: 3-panel comparison with model contour overlays.<br>• **Page 5**: 3-panel comparison with cluster positions from Sun et al. (2024).<br>• **Pages 6+**: High-resolution $2'' \times 2''$ zoom cutouts and 1D RA/Dec brightness profile slices for each modeled clump / peak. |
+| `data_plot.fits`, `ring_model.fits`, `resid_plot.fits` | 2D FITS images with full WCS coordinates containing observed data, best-fit model, and residual maps in $\text{MJy}/\text{sr}$ for inspection in CARTA/DS9. |
 | `<name>_psrecord.png` & `.txt` | Resource monitoring profile tracking CPU % and memory (MB) utilization over the duration of the run. |
 | `bashlog.txt` | Complete stdout and stderr log captured during the execution of all shell and Python stages. |
 
