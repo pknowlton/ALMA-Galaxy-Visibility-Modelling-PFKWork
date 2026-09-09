@@ -627,7 +627,7 @@ def main():
             plt.setp(ax_dec.get_xticklabels(), rotation=20, ha='right')
             ax_dec.grid(True, alpha=0.3, linestyle=':')
 
-            blob_label = f"Blob {b_idx + 1}" if len(dynest_coords) > 1 else "Blob"
+            blob_label = f"Peak {b_idx + 1}" if "2peak" in fittype else (f"Blob {b_idx + 1}" if len(dynest_coords) > 1 else "Blob")
             fig.suptitle(f"{target_name} - {blob_label} Zoom ($2'' \\times 2''$)", size=26)
             fig.subplots_adjust(hspace=0.2, wspace=0.28, bottom=0.15)
             pp.savefig()
