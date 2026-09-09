@@ -506,6 +506,18 @@ def main():
     fig.subplots_adjust(hspace=0.1, wspace=0.1)
     pp.savefig()
 
+    #save arrays as fits files with WCS information, so we can check information later in CARTA if we want. These are in MJy/sr.
+    header_data = data_wcs.to_header()
+    header_model = mod_wcs.to_header()
+
+    hdu_data = fits.PrimaryHDU(data=data_plot, header=header_data)
+    hdu_model = fits.PrimaryHDU(data=ring_model, header=header_model)
+    hdu_resid = fits.PrimaryHDU(data=resid_plot, header=header_data)
+
+    hdu_data.writeto("./output/data_plot.fits", overwrite=True)
+    hdu_model.writeto("./output/ring_model.fits", overwrite=True)
+    hdu_resid.writeto("./output/resid_plot.fits", overwrite=True)
+
     # --------------------------------------------------------------------------
     # 7. Zoomed-In Blob Analysis & 1D Brightness Profiles (Data, Model, Residuals)
     # --------------------------------------------------------------------------
@@ -569,7 +581,7 @@ def main():
             im_zoom = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower', cmap='inferno', rasterized=True)
             ax_img.text(5, 5, f'{target_name} (Zoom)', color='w', fontsize=16)
             cbar_zoom = plt.colorbar(mappable=im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-            cbar_zoom.set_label(r'Intensity (MJy/sr)', size=16)
+            cbar_zoom.set_label(r'Specific Intensity (MJy/sr)', size=16)
 
             # Marker for central blob coordinate
             ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='cyan', marker='+', s=150, linewidth=2)

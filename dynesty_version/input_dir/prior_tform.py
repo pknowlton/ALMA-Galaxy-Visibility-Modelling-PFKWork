@@ -179,19 +179,25 @@ def twod_gauss1blob_2peak_ptform(u):
     """
     u = np.asarray(u)
     prior_ranges = np.array([
-        [-5, 15],   # Ring Peak [log(Jy/sr)]
-        [0, 10],    # Ring Width [arcsec]
-        [0, 20],    # Ring Rad [arcsec]
-        [0, 90],    # Inclination [deg]
+        [0, 8],   # Ring Peak [log(Jy/sr)]
+        [0, 3],    # Ring Width [arcsec]
+        [4, 8],    # Ring Rad [arcsec]
+        [45, 80],    # Inclination [deg]
         [-10, 10],  # Position Angle [deg]
         [-5, 5],    # Offset RA [arcsec]
         [-5, 5],    # Offset Dec [arcsec]
-        [-5, 15],   # Blob Peak 1 [log(Jy/sr)]
-        [0, 0.6],   # Blob Width 1 [arcsec]
-        [-5, 15],   # Blob Peak 2 [log(Jy/sr)]
-        [0, 0.6],   # Blob Width 2 [arcsec]
-        [5, 8],     # Blob Dist [arcsec]
-        [168, 200]  # Blob Angle [deg]
+        [0, 9],   # Blob Peak 1 [log(Jy/sr)]
+        #[0.3, 1.0],   # Blob Width 1 [arcsec] (Blob 1)
+        #[0.3, 1.0],   # Blob Width 1 [arcsec] (Blob 2)
+        [0.2, 1.0],   # Blob Width 1 [arcsec] (Blob 3)
+        [0, 9],   # Blob Peak 2 [log(Jy/sr)]
+        #[0, 0.3],   # Blob Width 2 [arcsec] (Blob 1)
+        #[0, 0.3],   # Blob Width 2 [arcsec] (Blob 2)
+        [0, 0.2],   # Blob Width 2 [arcsec] (Blob 3)
+        [5, 9],     # Blob Dist [arcsec]
+        #[168, 200]  # Blob Angle [deg] (Blob 1)
+        #[350, 390]  # Blob Angle [deg] (Blob 2)
+        [150, 168]  # Blob Angle [deg] (Blob 3)
     ], dtype=float)
 
     low = prior_ranges[:, 0]
@@ -200,7 +206,42 @@ def twod_gauss1blob_2peak_ptform(u):
     v = low + u * (high - low)
     
     # Constrain Width 2 to always be narrower than Width 1
-    v[10] = prior_ranges[10, 0] + u[10] * (v[8] - prior_ranges[10, 0])
+    #v[10] = prior_ranges[10, 0] + u[10] * (v[8] - prior_ranges[10, 0])
+    
+    return v
+
+
+def twod_gauss1blob_2peak_ptform(u):
+    
+    u = np.asarray(u)
+    prior_ranges = np.array([
+        [0, 8],   # Ring Peak [log(Jy/sr)]
+        [0, 3],    # Ring Width [arcsec]
+        [4, 8],    # Ring Rad [arcsec]
+        [45, 80],    # Inclination [deg]
+        [-10, 10],  # Position Angle [deg]
+        [-5, 5],    # Offset RA [arcsec]
+        [-5, 5],    # Offset Dec [arcsec]
+        [0, 9],   # Blob Peak 1 [log(Jy/sr)]
+        [0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 1)
+        #[0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 2)
+        #[0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 3)
+        [5, 9],     # Blob Dist 1 [arcsec]
+        [168, 200]  # Blob Angle 1 [deg] (Blob 1)
+        #[350, 390]  # Blob Angle 1 [deg] (Blob 2)
+        #[150, 168]  # Blob Angle 1 [deg] (Blob 3)
+        [0, 9],   # Blob Peak 2 [log(Jy/sr)]
+        [0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 1)
+        #[0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 2)
+        #[0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 3)
+        [0, 2],     # Blob Dist 2 [arcsec] - distance from peak 1
+        [0, 360]  # Blob Angle 2 [deg] - angle from peak 1
+    ], dtype=float)
+
+    low = prior_ranges[:, 0]
+    high = prior_ranges[:, 1]
+
+    v = low + u * (high - low)
     
     return v
 

@@ -176,6 +176,7 @@ def main():
         raise ValueError(msg)
 
     logging.info(f'Prior transform function is {fittype}_ptform')
+    
 
     labels, units, ndim = model_addon(fittype)
 

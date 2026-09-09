@@ -620,6 +620,125 @@ def twod_gauss1blob_2peak(pars, args, vis_data, version):
 
         return model_img
 
+#########################
+### 2D Gaussian Ring + 1 Gaussian Blob (2 Peaks, Double Pendulum)
+#########################
+
+
+def twod_gauss1blob_2peak_dp_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b11, sigma_b11, dist_b11, ang_b11, peak_b12, sigma_b12, dist_b12, ang_b12, nxy, dxy, version):
+    # Initialize the image plane
+    #image_size = nxy * dxy
+    #x = np.linspace(-image_size/2, image_size/2, nxy)
+    #y = np.linspace(-image_size/2, image_size/2, nxy)
+    #xx, yy = np.meshgrid(x, y)
+
+    x = ((np.arange(nxy) - (nxy-1)/2)-0.5) * dxy
+    y = ((np.arange(nxy) - (nxy-1)/2)-0.5) * dxy
+    xx, yy = np.meshgrid(x, y)
+
+    if version in ("chi2", "vis"):
+
+        # Apply structural position angle rotation (all spatial units in radians)
+        xpa_rg = xx*COS_PA + yy*SIN_PA
+        ypa_rg = -xx*SIN_PA + yy*COS_PA
+        
+        xinc = xpa_rg/np.cos(inc)
+        radius_vec = np.hypot(xinc, ypa_rg)
+
+        # Calculate Cartesian offsets for Blob 1 Peak 1 (in radians)
+        xdot_b11 = dist_b11 * np.sin(ang_b11)
+        ydot_b11 = dist_b11 * np.cos(ang_b11)
+
+        # Calculate extra Cartesian offsets for Blob 1 Peak 2 (in radians)
+        xdot_b12 = dist_b12 * np.sin(ang_b12)
+        ydot_b12 = dist_b12 * np.cos(ang_b12)
+        xdot_bdp = xdot_b11 + xdot_b12
+        ydot_bdp = ydot_b11 + ydot_b12
+
+        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+        blob11_model_jypix = gaussblob_prof(peak_b11, sigma_b11, xx, yy, xdot_b11, ydot_b11, dxy)
+        blob12_model_jypix = gaussblob_prof(peak_b12, sigma_b12, xx, yy, xdot_bdp, ydot_bdp, dxy)
+
+        return ring_model_jypix + blob11_model_jypix + blob12_model_jypix
+
+    elif version == 'plot':
+
+        # Shift and rotate coordinates (all spatial units in arcseconds)
+        xx_shifted = xx + (dra)
+        yy_shifted = yy - (ddec)
+
+        xpa = xx_shifted*np.cos(pa) + yy_shifted*np.sin(pa)
+        ypa = -xx_shifted*np.sin(pa) + yy_shifted*np.cos(pa)
+
+        xpa_rg = xpa*COS_PA + ypa*SIN_PA
+        ypa_rg = -xpa*SIN_PA + ypa*COS_PA
+
+        xinc = xpa_rg/np.cos(inc)
+        radius_vec = np.hypot(xinc, ypa_rg)
+
+        # Calculate Cartesian offsets for Blob 1 Peak 1 (in radians)
+        xdot_b11 = dist_b11 * np.sin(ang_b11)
+        ydot_b11 = dist_b11 * np.cos(ang_b11)
+
+        # Calculate extra Cartesian offsets for Blob 1 Peak 2 (in radians)
+        xdot_b12 = dist_b12 * np.sin(ang_b12)
+        ydot_b12 = dist_b12 * np.cos(ang_b12)
+        xdot_bdp = xdot_b11 + xdot_b12
+        ydot_bdp = ydot_b11 + ydot_b12
+
+        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1)
+        blob11_model_jysr = gaussblob_prof(peak_b11, sigma_b11, xpa, ypa, xdot_b11, ydot_b11, dxy)
+        blob12_model_jysr = gaussblob_prof(peak_b12, sigma_b12, xpa, ypa, xdot_bdp, ydot_bdp, dxy)
+
+        return ring_model_jysr + blob11_model_jysr + blob12_model_jysr
+
+    else:
+
+        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
+        logging.warning(msg)
+        raise ValueError(msg)
+
+def twod_gauss1blob_2peak_dp(pars, args, vis_data, version):
+
+    peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, dist_b11, ang_b11, peak_b12, sigma_b12, dist_b12, ang_b12 = pars
+    nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    inclination *= deg
+    posangle *= deg
+    ang_b11 *= deg
+    ang_b12 *= deg
+
+    # Convert spatial parameters from arcseconds to radians for Galario visibility domain
+    if version in ("chi2", "vis"):
+
+        sigma *= arcsec
+        ring_rad *= arcsec
+        dRA *= arcsec
+        dDec *= arcsec
+        sigma_b11 *= arcsec
+        sigma_b12 *= arcsec
+        dist_b11 *= arcsec
+        dist_b12 *= arcsec
+
+    model_img = twod_gauss1blob_2peak_dp_model(peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, dist_b11, ang_b11, peak_b12, sigma_b12, dist_b12, ang_b12, nxy, dxy, version) 
+
+    if version == 'chi2':
+
+        chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA, dDec=dDec, PA=posangle, origin='lower')
+
+        return chi2
+
+    elif version == 'vis':
+
+        model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA, dDec=dDec, PA=posangle, origin='lower'), dtype=np.complex256)
+
+        return model_vis
+
+    else:
+
+        return model_img
+
 
 #########################
 ### 2D Gaussian Ring + 3 Gaussian Blobs
@@ -861,6 +980,9 @@ def model_prof(pars, args, vis_data, version, fittype):
     elif fittype == 'twod_gauss1blob_2peak':
         prof = twod_gauss1blob_2peak(pars, args, vis_data, version)
 
+    elif fittype == 'twod_gauss1blob_2peak_dp':
+        prof = twod_gauss1blob_2peak_dp(pars, args, vis_data, version)
+
     elif fittype == 'twod_gauss3blob':
         prof = twod_gauss3blob(pars, args, vis_data, version)
 
@@ -913,6 +1035,11 @@ def model_addon(fittype):
     elif fittype == 'twod_gauss1blob_2peak':
         label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B. Peak 1", "B. Width 1", "B. Peak 2", "B. Width 2", "Dist", "Angle"]
         unit = ["log(Jy/sr)", "arcsec", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy/sr)", "arcsec", "log(Jy/sr)", "arcsec", "arcsec", "degrees"]
+        ndim = len(label)
+
+    elif fittype == 'twod_gauss1blob_2peak_dp':
+        label = ["Peak", "Width", "Offset", "Inc", "PA", "Offset RA", "Offset Dec", "B. Peak 1", "B. Width 1", "Dist 1", "Angle 1", "B. Peak 2", "B. Width 2", "Dist 2", "Angle 2"]
+        unit = ["log(Jy/sr)", "arcsec", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy/sr)", "arcsec", "arcsec", "degrees", "log(Jy/sr)", "arcsec", "arcsec", "degrees"]
         ndim = len(label)
 
     elif fittype == 'twod_gauss3blob':

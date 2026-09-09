@@ -59,6 +59,30 @@ def dynest_radec(pars, fittype):
         dynest_coords[0, 0] = radec_b1.ra.deg
         dynest_coords[0, 1] = radec_b1.dec.deg
 
+    elif fittype == 'twod_gauss1blob_2peak_dp':
+        
+        peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11, dist_b11, ang_b11, peak_b12, sigma_b12, dist_b12, ang_b12 = pars
+
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+
+        dynest_coords = np.zeros((2, 2))
+
+        co_ang_b11 = ang_b11 - posangle
+        ap_ang_b11 = (360 - co_ang_b11) * u.deg
+        ap_dist_b11 = dist_b11 * u.arcsecond
+
+        radec_b11 = ngc3351.directional_offset_by(position_angle=ap_ang_b11, separation=ap_dist_b11)
+        dynest_coords[0, 0] = radec_b11.ra.deg
+        dynest_coords[0, 1] = radec_b11.dec.deg
+
+        co_ang_b12 = ang_b12 - posangle
+        ap_ang_b12 = (360 - co_ang_b12) * u.deg
+        ap_dist_b12 = dist_b12 * u.arcsecond
+
+        radec_b12 = radec_b11.directional_offset_by(position_angle=ap_ang_b12, separation=ap_dist_b12)
+        dynest_coords[1, 0] = radec_b12.ra.deg
+        dynest_coords[1, 1] = radec_b12.dec.deg
+
     elif fittype == 'twod_gauss3blob':
         
         peak, sigma, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3 = pars
