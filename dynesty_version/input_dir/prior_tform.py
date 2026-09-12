@@ -186,18 +186,18 @@ def twod_gauss1blob_2peak_ptform(u):
         [-10, 10],  # Position Angle [deg]
         [-5, 5],    # Offset RA [arcsec]
         [-5, 5],    # Offset Dec [arcsec]
-        [0, 9],   # Blob Peak 1 [log(Jy/sr)]
-        #[0.3, 1.0],   # Blob Width 1 [arcsec] (Blob 1)
-        #[0.3, 1.0],   # Blob Width 1 [arcsec] (Blob 2)
-        [0.2, 1.0],   # Blob Width 1 [arcsec] (Blob 3)
-        [0, 9],   # Blob Peak 2 [log(Jy/sr)]
-        #[0, 0.3],   # Blob Width 2 [arcsec] (Blob 1)
+        [5, 9],   # Blob Peak 1 [log(Jy/sr)]
+        #[0.5, 2.0],   # Blob Width 1 [arcsec] (Blob 1)
+        #[0.3, 0.6],   # Blob Width 1 [arcsec] (Blob 2)
+        [0.1, 0.6],   # Blob Width 1 [arcsec] (Blob 3)
+        [5, 9],   # Blob Peak 2 [log(Jy/sr)]
+        #[0, 0.5],   # Blob Width 2 [arcsec] (Blob 1)
         #[0, 0.3],   # Blob Width 2 [arcsec] (Blob 2)
-        [0, 0.2],   # Blob Width 2 [arcsec] (Blob 3)
+        [0, 0.1],   # Blob Width 2 [arcsec] (Blob 3)
         [5, 9],     # Blob Dist [arcsec]
-        #[168, 200]  # Blob Angle [deg] (Blob 1)
+        #[168, 185]  # Blob Angle [deg] (Blob 1)
         #[350, 390]  # Blob Angle [deg] (Blob 2)
-        [150, 168]  # Blob Angle [deg] (Blob 3)
+        [150, 165]  # Blob Angle [deg] (Blob 3)
     ], dtype=float)
 
     low = prior_ranges[:, 0]
@@ -269,18 +269,18 @@ def twod_gauss1blob_2peak_dp_ptform(u):
         [-5, 5],    # Offset RA [arcsec]
         [-5, 5],    # Offset Dec [arcsec]
         [0, 9],   # Blob Peak 1 [log(Jy/sr)]
-        [0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 1)
-        #[0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 2)
+        #[0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 1)
+        [0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 2)
         #[0.0, 1.0],   # Blob Width 1 [arcsec] (Blob 3)
         [5, 9],     # Blob Dist 1 [arcsec]
-        [168, 200],  # Blob Angle 1 [deg] (Blob 1)
-        #[350, 390]  # Blob Angle 1 [deg] (Blob 2)
-        #[150, 168]  # Blob Angle 1 [deg] (Blob 3)
-        [0, 9],   # Blob Peak 2 [log(Jy/sr)]
-        [0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 1)
-        #[0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 2)
+        #[168, 185],  # Blob Angle 1 [deg] (Blob 1)
+        [350, 390],  # Blob Angle 1 [deg] (Blob 2)
+        #[150, 165],  # Blob Angle 1 [deg] (Blob 3)
+        [5, 9],   # Blob Peak 2 [log(Jy/sr)]
+        #[0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 1)
+        [0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 2)
         #[0.0, 1.0],   # Blob Width 2 [arcsec] (Blob 3)
-        [0, 2],     # Blob Dist 2 [arcsec] - distance from peak 1
+        [0, 0.4],     # Blob Dist 2 [arcsec] - distance from peak 1
         [0, 360]  # Blob Angle 2 [deg] - angle from peak 1
     ], dtype=float)
 

@@ -29,8 +29,8 @@ import argparse
 from canfar.sessions import Session
 
 # Directory and data paths on the CANFAR /arc filesystem
-in_dir = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/input_dir'
-out_dir = '/arc/home/pknowlton/dynest_product_dir/'
+in_dir = '/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/input_dir'
+out_dir = '/arc/projects/uvdisk_fit/dynest_product_dir/'
 data_path = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable.txt'
 
 # ------------------------------------------------------------------------------
@@ -63,7 +63,7 @@ out_dir_full = os.path.join(out_dir, name) # Target directory where results will
 image = 'images.canfar.net/skaha/astroml:latest' # Docker container image with astronomical tools
 
 # Entrypoint script executed inside the spawned container
-cmd = '/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/launch_fittings_scratch_bshlog_pfk.sh'
+cmd = '/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/launch_fittings_scratch_bshlog_pfk.sh'
 arglist = [in_dir, out_dir_full, name, data_path, fittype]
 args = ' '.join(arglist)
 
