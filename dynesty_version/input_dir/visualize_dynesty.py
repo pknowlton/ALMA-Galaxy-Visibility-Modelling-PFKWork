@@ -558,17 +558,17 @@ def main():
 
             # Bounds clamping to ensure 3-pixel slice stays within cutout
             ny_cut, nx_cut = cut_data.shape
-            cy_clamp = np.clip(cy, 1, ny_cut - 2)
-            cx_clamp = np.clip(cx, 1, nx_cut - 2)
+            #cy_clamp = np.clip(cy, 1, ny_cut - 2)
+            #cx_clamp = np.clip(cx, 1, nx_cut - 2)
 
-            # 1D RA brightness profile: average of center row, row above, and row below
-            ra_profile = np.mean(cut_data[cy_clamp - 1 : cy_clamp + 2, :], axis=0)
+            # 1D RA brightness profile using exact target row
+            ra_profile = np.mean(cut_data[cy - 1 : cy + 2, :], axis=0)
             x_indices = np.arange(nx_cut)
             pixel_world_ra = cut_wcs.pixel_to_world(x_indices, np.full(nx_cut, cy_f))
             ra_coords = pixel_world_ra.ra.deg
 
-            # 1D Dec brightness profile: average of center column, column left, and column right
-            dec_profile = np.mean(cut_data[:, cx_clamp - 1 : cx_clamp + 2], axis=1)
+            # 1D Dec brightness profile using exact target column
+            dec_profile = np.mean(cut_data[:, cx - 1 : cx + 2], axis=1)
             y_indices = np.arange(ny_cut)
             pixel_world_dec = cut_wcs.pixel_to_world(np.full(ny_cut, cx_f), y_indices)
             dec_coords = pixel_world_dec.dec.deg

@@ -183,6 +183,17 @@ def main():
     logging.info(f"Dimensions for {fittype}: {ndim}")
     logging.info(f"Parameters for {fittype}: {labels}")
 
+
+    logging.info("==========Prior Ranges==========")
+    low_u = np.zeros(ndim)
+    low_v = prior_transform(low_u)
+    high_u = np.zeros(ndim)+1
+    high_v = prior_transform(high_u)
+    
+    for i in range(ndim):
+
+        logging.info(f"{labels[i]:<30} [{low_v[i]:.1f}, {high_v[i]:.1f}] {units[i]}")
+
     check_file = './output/' + fittype + '_checkpoint.save'
     fit_start = time.perf_counter()
 

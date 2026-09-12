@@ -39,7 +39,7 @@ FITTYPE=$5
 echo "Fit Type:         $FITTYPE"
 
 # Path to the next stage in the pipeline (resource usage profiler)
-PSR_CMD="/arc/home/pknowlton/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/launch_fittings_scratch_psrec_pfk.sh"
+PSR_CMD="/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/launch_fittings_scratch_psrec_pfk.sh"
 
 SCRATCH_ROOT="/scratch"
 
