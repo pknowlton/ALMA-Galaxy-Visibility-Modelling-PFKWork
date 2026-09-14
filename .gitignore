@@ -1,4 +1,5 @@
 casa_dir/
+casa_dir_freq/
 FIX_package/
 __pycache__/
 *.py[cod]
