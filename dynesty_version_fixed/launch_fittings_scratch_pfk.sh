@@ -81,7 +81,7 @@ cd "${STAGING_DIR}"
 
 pwd
 ls
-ls casa_dir
+ls casa_dir_freq
 
 echo "Starting run at $(date)"
 
