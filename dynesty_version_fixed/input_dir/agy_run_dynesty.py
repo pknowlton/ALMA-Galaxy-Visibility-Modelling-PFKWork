@@ -205,6 +205,7 @@ def main():
         periodic_dims.append(4)
     if fittype == 'twod_gauss1blob_2peak_dp':
         periodic_dims.append(14)
+    periodic = periodic_dims if len(periodic_dims) > 0 else None
     logging.info("Periodic parameter indices: %s", periodic_dims)
 
     check_file = './output/' + fittype + '_checkpoint.save'
@@ -231,7 +232,7 @@ def main():
                     nlive=nlive,
                     bound='multi',
                     sample='rwalk',
-                    periodic=periodic_dims,
+                    periodic=periodic,
                     pool=pool,
                     queue_size=16
                 )
@@ -248,7 +249,7 @@ def main():
                 nlive=nlive,
                 bound='multi',
                 sample='rwalk',
-                periodic=periodic_dims,
+                periodic=periodic,
                 pool=pool,
                 queue_size=16
             )

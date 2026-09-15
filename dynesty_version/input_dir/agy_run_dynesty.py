@@ -84,7 +84,7 @@ def initialize_data(data_file):
             - `re, im` (numpy.ndarray): Real and Imaginary visibility components in Jy.
             - `w` (numpy.ndarray): Statistical weights ($1/\sigma^2$) in $\text{Jy}^{-2}$.
     """
-    u, v, re, im, w = np.require(np.loadtxt(data_file, unpack=True), requirements='C')
+    u, v, re, im, w, freq = np.require(np.loadtxt(data_file, unpack=True), requirements='C')
     wavelength = 299792458 / 93e9  # 93 GHz continuum wavelength (~3.22 mm)
     u /= wavelength
     v /= wavelength

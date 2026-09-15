@@ -269,9 +269,9 @@ def main():
     # --------------------------------------------------------------------------
     # 3. Load Observed Visibilities for Residual Calculation
     # --------------------------------------------------------------------------
-    ms = './casa_dir_simgauss/M95_C5+C2_cont93_uvtable.ms'
-    msx = './casa_dir_simgauss/M95_C5+C2_cont93_trimmmedXX.ms'
-    msy = './casa_dir_simgauss/M95_C5+C2_cont93_trimmmedYY.ms'
+    ms = './casa_dir_simgauss/M95_C5+C2_cont93_uvtable_simgauss.ms'
+    msx = './casa_dir_simgauss/M95_C5+C2_cont93_trimmedXX_simgauss.ms'
+    msy = './casa_dir_simgauss/M95_C5+C2_cont93_trimmedYY_simgauss.ms'
 
     data_imgname = './casa_dir_simgauss/M95_cont93GHz_auto'
     resid_imgname = './casa_dir_simgauss/M95_cont93GHz_residual'
