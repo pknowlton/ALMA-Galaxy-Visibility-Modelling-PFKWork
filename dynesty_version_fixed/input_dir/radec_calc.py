@@ -132,6 +132,17 @@ def dynest_radec(pars, fittype):
             dynest_coords[idx, 0] = radec.ra.deg
             dynest_coords[idx, 1] = radec.dec.deg
 
+    elif fittype in ('simgauss', 'twod_simgauss'):
+        b_p1, b_p2, dist, ang, posangle, dRA, dDec = pars
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        dynest_coords = np.zeros((1, 2))
+
+        sky_ang = (posangle + ang) * u.deg
+        sep = dist * u.arcsecond
+        radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
+        dynest_coords[0, 0] = radec.ra.deg
+        dynest_coords[0, 1] = radec.dec.deg
+
     else:
         msg = f"Invalid fittype '{fittype}', please choose a valid fitting model."
         logging.warning(msg)

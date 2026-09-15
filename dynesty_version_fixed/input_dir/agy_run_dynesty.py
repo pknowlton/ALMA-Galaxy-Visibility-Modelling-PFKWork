@@ -199,8 +199,10 @@ def main():
     for i in range(ndim):
         logging.info(f"{labels[i]:<30} [{low_v[i]:.2f}, {high_v[i]:.2f}] {units[i]}")
 
-    # Identify periodic dimensions (e.g. Ring PA is index 4; Angle 2 in double pendulum is index 14)
-    periodic_dims = [4]
+    # Identify periodic dimensions (e.g. Ring PA is index 4; Angle 2 in double pendulum is index 14; simgauss PA is restricted to [0, 15] deg so not periodic)
+    periodic_dims = []
+    if fittype not in ('simgauss', 'twod_simgauss'):
+        periodic_dims.append(4)
     if fittype == 'twod_gauss1blob_2peak_dp':
         periodic_dims.append(14)
     logging.info("Periodic parameter indices: %s", periodic_dims)

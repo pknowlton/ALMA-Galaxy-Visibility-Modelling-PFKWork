@@ -213,12 +213,12 @@ def main():
     # --------------------------------------------------------------------------
     # 3. Load Observed Visibilities for Residual Calculation
     # --------------------------------------------------------------------------
-    ms = './casa_dir/M95_C5+C2_cont93.ms'
-    msx = './casa_dir/M95_C5+C2_cont93_trimmmedXX.ms'
-    msy = './casa_dir/M95_C5+C2_cont93_trimmmedYY.ms'
+    ms = './casa_dir_simgauss/M95_C5+C2_cont93.ms'
+    msx = './casa_dir_simgauss/M95_C5+C2_cont93_trimmmedXX.ms'
+    msy = './casa_dir_simgauss/M95_C5+C2_cont93_trimmmedYY.ms'
 
-    data_imgname = './casa_dir/M95_cont93GHz_auto'
-    resid_imgname = './casa_dir/M95_cont93GHz_residual'
+    data_imgname = './casa_dir_simgauss/M95_cont93GHz_auto'
+    resid_imgname = './casa_dir_simgauss/M95_cont93GHz_residual'
 
     # Load XX baseline visibilities
     u_datx, v_datx, Re_datx, Im_datx, w_datx = np.require(np.loadtxt(msx + '.uvtable.txt', unpack=True), requirements='C')

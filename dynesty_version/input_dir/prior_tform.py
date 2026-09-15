@@ -358,3 +358,59 @@ def twod_gauss3blob_ptform(u):
     v = low + u * (high - low)
     
     return v
+
+
+#########################
+### Simulated Single Gaussian Blob (7 parameters)
+#########################
+
+def simgauss_ptform(u):
+    """
+    Prior transform for the simulated single Gaussian blob test model (7 parameters).
+
+    Transforms unit hypercube coordinates $u \in [0, 1]^7$ into physical parameters
+    assuming uniform priors across specified intervals.
+
+    Parameters
+    ----------
+    u : array_like, shape (7,)
+        Normalized coordinates on the unit hypercube ($u_i \in [0, 1]$).
+        Order of parameters:
+            0: Blob Peak brightness log10(Jy/sr)
+            1: Blob Gaussian radial width (arcsec)
+            2: Blob radial distance from center (arcsec)
+            3: Blob azimuthal angle (degrees, clockwise)
+            4: Disk position angle (degrees)
+            5: Centroid Right Ascension offset (arcsec)
+            6: Centroid Declination offset (arcsec)
+
+    Returns
+    -------
+    v : numpy.ndarray, shape (7,)
+        Physical model parameters:
+            - Peak:       [8.0, 10.0] log10(Jy/sr)
+            - Width:      [0.6, 1.4] arcsec
+            - Dist:       [5.0, 7.0] arcsec
+            - Angle:      [180.0, 270.0] degrees (clockwise)
+            - PA:         [0.0, 15.0] degrees
+            - Offset RA:  [-4.0, 4.0] arcsec
+            - Offset Dec: [-4.0, 4.0] arcsec
+    """
+    u = np.asarray(u)
+    prior_ranges = np.array([
+        [8.0, 10.0],    # Blob Peak [log10(Jy/sr)]
+        [0.6, 1.4],     # Blob Width (sigma) [arcsec]
+        [5.0, 7.0],     # Blob Dist [arcsec]
+        [180.0, 270.0], # Blob Angle [deg] (clockwise)
+        [0.0, 15.0],    # Position Angle [deg]
+        [-4.0, 4.0],    # Offset RA [arcsec]
+        [-4.0, 4.0]     # Offset Dec [arcsec]
+    ], dtype=float)
+
+    low = prior_ranges[:, 0]
+    high = prior_ranges[:, 1]
+
+    v = low + u * (high - low)
+    return v
+
+twod_simgauss_ptform = simgauss_ptform
