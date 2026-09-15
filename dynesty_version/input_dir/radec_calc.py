@@ -115,6 +115,21 @@ def dynest_radec(pars, fittype):
         dynest_coords[2, 0] = radec_b3.ra.deg
         dynest_coords[2, 1] = radec_b3.dec.deg
 
+    elif fittype in ('simgauss', 'twod_simgauss'):
+        peak, sigma, dist, ang, posangle, dRA, dDec = pars
+
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+
+        dynest_coords = np.zeros((1, 2))
+
+        co_ang = ang - posangle
+        ap_ang = (360 - co_ang) * u.deg
+        ap_dist = dist * u.arcsecond
+
+        radec_blob = ngc3351.directional_offset_by(position_angle=ap_ang, separation=ap_dist)
+        dynest_coords[0, 0] = radec_blob.ra.deg
+        dynest_coords[0, 1] = radec_blob.dec.deg
+
     elif fittype == 'twod_gaussring':
         #no blob coords, just plot the phase center for now
         dynest_coords = np.zeros((1, 2))

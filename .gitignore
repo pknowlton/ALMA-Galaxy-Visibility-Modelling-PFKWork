@@ -1,5 +1,6 @@
 casa_dir/
 casa_dir_freq/
+casa_dir_simgauss/
 FIX_package/
 __pycache__/
 *.py[cod]

@@ -36,7 +36,7 @@ try:
 except Exception:
     pass
 
-from model_prof import get_grid, gaussblob_prof, gaussring_prof, ring_flux_to_peak, blob_flux_to_peak
+from model_prof import get_grid, gaussblob_prof, gaussring_prof, ring_flux_to_peak, blob_flux_to_peak, model_addon, model_prof
 from radec_calc import make_model_wcs, dynest_radec
 from prior_tform import (
     RING_PRIOR_RANGES,
@@ -44,7 +44,8 @@ from prior_tform import (
     twod_gauss1blob_ptform,
     twod_gauss1blob_2peak_ptform,
     twod_gauss1blob_2peak_dp_ptform,
-    twod_gauss3blob_ptform
+    twod_gauss3blob_ptform,
+    simgauss_ptform
 )
 
 
@@ -365,6 +366,138 @@ class TestPriorConsistency(unittest.TestCase):
         # 4. Blob 3 must enclose YMC 17 (~182.41 deg) and YMC 18 (~185.17 deg)
         self.assertTrue(ang3_min <= 182.41 <= ang3_max, f"Blob 3 [{ang3_min}, {ang3_max}] does not enclose YMC 17!")
         self.assertTrue(ang3_min <= 185.17 <= ang3_max, f"Blob 3 [{ang3_min}, {ang3_max}] does not enclose YMC 18!")
+
+
+class TestSimgaussModel(unittest.TestCase):
+    """
+    Tests the new single Gaussian blob ('simgauss') model implementation
+    across both dynesty_version_fixed and dynesty_version.
+    """
+
+    def test_dynesty_version_fixed_simgauss_priors(self):
+        u0 = np.zeros(7)
+        u1 = np.ones(7)
+        v0 = simgauss_ptform(u0)
+        v1 = simgauss_ptform(u1)
+
+        # LogFlux in [-2.27, 0.46]
+        self.assertAlmostEqual(v0[0], -2.27, places=2)
+        self.assertAlmostEqual(v1[0], 0.46, places=2)
+
+        # LogSigma in [-0.222, 0.146] -> sigma in [0.6, 1.4] arcsec
+        sigma_min = 10.0**v0[1]
+        sigma_max = 10.0**v1[1]
+        self.assertAlmostEqual(sigma_min, 0.6, places=1)
+        self.assertAlmostEqual(sigma_max, 1.4, places=1)
+
+        # Dist in [5.0, 7.0] arcsec (uniform area disk mapping)
+        self.assertAlmostEqual(v0[2], 5.0, places=2)
+        self.assertAlmostEqual(v1[2], 7.0, places=2)
+
+        # Angle in [90.0, 180.0] deg
+        self.assertAlmostEqual(v0[3], 90.0, places=2)
+        self.assertAlmostEqual(v1[3], 180.0, places=2)
+
+        # PA in [0.0, 15.0] deg
+        self.assertAlmostEqual(v0[4], 0.0, places=2)
+        self.assertAlmostEqual(v1[4], 15.0, places=2)
+
+        # dRA, dDec in [-4.0, 4.0] arcsec
+        self.assertAlmostEqual(v0[5], -4.0, places=2)
+        self.assertAlmostEqual(v1[5], 4.0, places=2)
+        self.assertAlmostEqual(v0[6], -4.0, places=2)
+        self.assertAlmostEqual(v1[6], 4.0, places=2)
+
+    def test_dynesty_version_fixed_model_addon(self):
+        for name in ('simgauss', 'twod_simgauss'):
+            labels, units, ndim = model_addon(name)
+            self.assertEqual(ndim, 7)
+            self.assertEqual(len(labels), 7)
+            self.assertEqual(len(units), 7)
+
+    def test_dynesty_version_fixed_radec(self):
+        pars = np.array([-1.0, 0.0, 6.0, 135.0, 10.0, 0.5, -0.5])
+        coords = dynest_radec(pars, 'simgauss')
+        self.assertEqual(coords.shape, (1, 2))
+        self.assertTrue(np.all(np.isfinite(coords)))
+
+    def test_dynesty_version_fixed_model_prof(self):
+        pars = np.array([-1.0, 0.0, 6.0, 135.0, 10.0, 0.5, -0.5])
+        args = (64, 0.1)
+        vis_data = (np.array([1000.0]), np.array([1000.0]), np.array([1.0]), np.array([0.0]), np.array([1.0]))
+        img = model_prof(pars, args, vis_data, 'plot', 'simgauss')
+        self.assertEqual(img.shape, (64, 64))
+        self.assertTrue(np.all(np.isfinite(img)))
+        self.assertGreater(np.max(img), 0.0)
+
+    def test_dynesty_version_simgauss(self):
+        # Dynamically import dynesty_version modules to verify parity
+        orig_sys_path = list(sys.path)
+        dynesty_ver_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../dynesty_version/input_dir'))
+        sys.path.insert(0, dynesty_ver_dir)
+        try:
+            import importlib
+            # Load dynesty_version's prior_tform, model_prof, radec_calc
+            import importlib.util
+            def load_module(name, path):
+                spec = importlib.util.spec_from_file_location(name, path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+
+            pt_old = load_module("pt_old", os.path.join(dynesty_ver_dir, "prior_tform.py"))
+            mp_old = load_module("mp_old", os.path.join(dynesty_ver_dir, "model_prof.py"))
+            rc_old = load_module("rc_old", os.path.join(dynesty_ver_dir, "radec_calc.py"))
+
+            # Test prior transforms
+            u0 = np.zeros(7)
+            u1 = np.ones(7)
+            v0 = pt_old.simgauss_ptform(u0)
+            v1 = pt_old.simgauss_ptform(u1)
+
+            # Peak in [8.0, 10.0]
+            self.assertAlmostEqual(v0[0], 8.0, places=2)
+            self.assertAlmostEqual(v1[0], 10.0, places=2)
+            # Width in [0.6, 1.4]
+            self.assertAlmostEqual(v0[1], 0.6, places=2)
+            self.assertAlmostEqual(v1[1], 1.4, places=2)
+            # Dist in [5.0, 7.0]
+            self.assertAlmostEqual(v0[2], 5.0, places=2)
+            self.assertAlmostEqual(v1[2], 7.0, places=2)
+            # Angle in [180.0, 270.0]
+            self.assertAlmostEqual(v0[3], 180.0, places=2)
+            self.assertAlmostEqual(v1[3], 270.0, places=2)
+            # PA in [0.0, 15.0]
+            self.assertAlmostEqual(v0[4], 0.0, places=2)
+            self.assertAlmostEqual(v1[4], 15.0, places=2)
+            # dRA, dDec in [-4.0, 4.0]
+            self.assertAlmostEqual(v0[5], -4.0, places=2)
+            self.assertAlmostEqual(v1[5], 4.0, places=2)
+            self.assertAlmostEqual(v0[6], -4.0, places=2)
+            self.assertAlmostEqual(v1[6], 4.0, places=2)
+
+            # Test model addon
+            for name in ('simgauss', 'twod_simgauss'):
+                labels, units, ndim = mp_old.model_addon(name)
+                self.assertEqual(ndim, 7)
+                self.assertEqual(len(labels), 7)
+
+            # Test radec_calc
+            pars_old = np.array([9.0, 1.0, 6.0, 225.0, 10.0, 0.5, -0.5])
+            coords = rc_old.dynest_radec(pars_old, 'simgauss')
+            self.assertEqual(coords.shape, (1, 2))
+            self.assertTrue(np.all(np.isfinite(coords)))
+
+            # Test model_prof
+            args = (64, 0.1)
+            vis_data = (np.array([1000.0]), np.array([1000.0]), np.array([1.0]), np.array([0.0]), np.array([1.0]))
+            img = mp_old.model_prof(pars_old, args, vis_data, 'plot', 'simgauss')
+            self.assertEqual(img.shape, (64, 64))
+            self.assertTrue(np.all(np.isfinite(img)))
+            self.assertGreater(np.max(img), 0.0)
+
+        finally:
+            sys.path = orig_sys_path
 
 
 if __name__ == '__main__':

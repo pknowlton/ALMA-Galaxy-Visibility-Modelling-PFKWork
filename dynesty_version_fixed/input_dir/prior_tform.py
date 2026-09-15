@@ -281,3 +281,62 @@ def twod_gauss3blob_ptform(u):
     v[17] = uniform_area_radius(u[17], 4.0, 10.0)
     v[18] = 177.0 + u[18] * (205.0 - 177.0)
     return v
+
+#########################
+### Simulated Single Gaussian Blob (7 parameters)
+#########################
+
+def simgauss_ptform(u):
+    """
+    Prior transform for the simulated single Gaussian blob test model (7 parameters).
+    Reparameterized according to Audit P1 Item 1 (log integrated flux + log size)
+    and Audit P1 Item 2 (uniform area Jacobian on disk).
+
+    Physical model parameters:
+        Peak brightness: 10^8 to 10^10 Jy/sr
+        Gaussian width sigma: 0.6 to 1.4 arcsec (FWHM = 2.355 arcsec at sigma = 1.0 arcsec)
+        Integrated flux: F = 2 * pi * sigma^2 * I_0
+                         log10(F [Jy]) spans [-2.27, 0.46] for I_0 in [10^8, 10^10] Jy/sr
+                         and sigma in [0.6, 1.4] arcsec (centered at [-1.83, 0.17] for sigma = 1.0 arcsec).
+        Azimuthal angle: 90 to 180 deg counter-clockwise (East of North)
+        Radial distance: 5 to 7 arcsec (uniform area on disk)
+        Position angle: 0 to 15 deg
+        Centroid offsets (dRA, dDec): -4 to 4 arcsec
+
+    Parameters
+    ----------
+    u : array_like, shape (7,)
+        Unit hypercube coordinates in [0, 1].
+
+    Returns
+    -------
+    v : numpy.ndarray, shape (7,)
+        0: Blob LogFlux [log10(Jy)] in [-2.27, 0.46]
+        1: Blob LogSigma [log10(arcsec)] in [-0.222, 0.146] (0.6" to 1.4")
+        2: Blob Distance [arcsec] in [5.0, 7.0] (uniform area on disk)
+        3: Blob Angle [deg] in [90.0, 180.0] (East of North, CCW)
+        4: Position Angle [deg] in [0.0, 15.0]
+        5: Centroid Offset RA [arcsec] in [-4.0, 4.0]
+        6: Centroid Offset Dec [arcsec] in [-4.0, 4.0]
+    """
+    u = np.asarray(u)
+    v = np.zeros(7, dtype=float)
+
+    # Blob LogFlux [log10(Jy)] derived from peak 10^8 - 10^10 Jy/sr and sigma 0.6 - 1.4"
+    v[0] = -2.27 + u[0] * (0.46 - (-2.27))
+    # Blob LogSigma [log10(arcsec)] corresponding to sigma in [0.6, 1.4]"
+    v[1] = -0.222 + u[1] * (0.146 - (-0.222))
+    # Distance: uniform area density on disk in [5.0, 7.0] arcsec (Audit P1 Item 2)
+    v[2] = uniform_area_radius(u[2], 5.0, 7.0)
+    # Angle: [90.0, 180.0] deg (counter-clockwise East of North)
+    v[3] = 90.0 + u[3] * (180.0 - 90.0)
+    # Disk Position Angle: [0.0, 15.0] deg
+    v[4] = 0.0 + u[4] * (15.0 - 0.0)
+    # Centroid Offset RA: [-4.0, 4.0] arcsec
+    v[5] = -4.0 + u[5] * (4.0 - (-4.0))
+    # Centroid Offset Dec: [-4.0, 4.0] arcsec
+    v[6] = -4.0 + u[6] * (4.0 - (-4.0))
+    return v
+
+twod_simgauss_ptform = simgauss_ptform
+

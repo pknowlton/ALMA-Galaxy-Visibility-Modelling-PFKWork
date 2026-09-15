@@ -740,6 +740,108 @@ def twod_gauss3blob(pars, args, vis_data, version):
         model_img = twod_gauss3blob_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, peak_b2, sigma_b2_arcsec, dist_b2, ang_b2, peak_b3, sigma_b3_arcsec, dist_b3, ang_b3, nxy, dxy, version)
         return model_img
 
+#########################
+### Simulated Single Gaussian Blob (7 parameters)
+#########################
+
+def twod_simgauss_model(peak, sigma, dra, ddec, pa, dist, ang, nxy, dxy, version):
+    """
+    Generates a 2D image matrix of a single compact Gaussian blob.
+
+    Parameters
+    ----------
+    peak : float
+        Blob peak brightness [log10(Jy/sr)].
+    sigma : float
+        Blob Gaussian sigma. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
+    dra, ddec : float
+        Centroid offsets in RA and Dec. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
+    pa : float
+        Position angle [rad].
+    dist : float
+        Blob radial distance from center. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
+    ang : float
+        Blob azimuthal angle [rad] (East of North in disk frame).
+    nxy : int
+        Grid pixel count along each dimension.
+    dxy : float
+        Angular pixel scale. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
+    version : str
+        Evaluation mode (`'chi2'`, `'vis'`, or `'plot'`).
+
+    Returns
+    -------
+    numpy.ndarray
+        2D array of intensity values for the blob.
+    """
+    xx, yy = get_grid(nxy, dxy)
+
+    # Calculate Cartesian offsets for Blob (East: xdot > 0, North: ydot > 0)
+    xdot = dist * np.sin(ang)
+    ydot = dist * np.cos(ang)
+
+    if version in ("chi2", "vis"):
+        blob_model_jypix = gaussblob_prof(peak, sigma, xx, yy, xdot, ydot, dxy)
+        return blob_model_jypix
+
+    elif version == 'plot':
+        xx_shifted = xx - dra
+        yy_shifted = yy - ddec
+
+        xpa = xx_shifted * np.cos(pa) + yy_shifted * np.sin(pa)
+        ypa = -xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+
+        blob_model_jysr = gaussblob_prof(peak, sigma, xpa, ypa, xdot, ydot, 1)
+        return blob_model_jysr
+
+    else:
+        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
+        logging.warning(msg)
+        raise ValueError(msg)
+
+def twod_simgauss(pars, args, vis_data, version):
+    """
+    Top-level model handler for Single Gaussian Blob (7 parameters).
+
+    Parameters
+    ----------
+    pars : array_like (Audit P1 Item 1: log integrated flux + log size)
+        [log_flux, log_sigma, dist, ang, posangle, dRA, dDec]
+    args : tuple
+        `(nxy, dxy)`
+    vis_data : tuple
+        (u, v, Re, Im, weights)
+    version : str
+        `'chi2'`, `'vis'`, or `'plot'`
+    """
+    log_flux, log_sigma, dist, ang, posangle, dRA, dDec = pars
+    nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    posangle *= deg
+    ang *= deg
+
+    sigma_arcsec = 10.0**log_sigma
+    sigma_rad = sigma_arcsec * arcsec
+
+    peak = blob_flux_to_peak(log_flux, sigma_rad)
+
+    if version in ("chi2", "vis"):
+        dRA_rad = dRA * arcsec
+        dDec_rad = dDec * arcsec
+        dist_rad = dist * arcsec
+        model_img = twod_simgauss_model(peak, sigma_rad, dRA_rad, dDec_rad, posangle, dist_rad, ang, nxy, dxy, version)
+
+        if version == 'chi2':
+            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
+            return chi2
+        else:
+            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
+            return model_vis
+    else:
+        model_img = twod_simgauss_model(peak, sigma_arcsec, dRA, dDec, posangle, dist, ang, nxy, dxy, version)
+        return model_img
+
 ##################################################################################################################################################
 
 def model_prof(pars, args, vis_data, version, fittype):
@@ -761,6 +863,8 @@ def model_prof(pars, args, vis_data, version, fittype):
         prof = twod_gauss1blob_2peak_dp(pars, args, vis_data, version)
     elif fittype == 'twod_gauss3blob':
         prof = twod_gauss3blob(pars, args, vis_data, version)
+    elif fittype in ('simgauss', 'twod_simgauss'):
+        prof = twod_simgauss(pars, args, vis_data, version)
     else:
         msg = f"Invalid fittype '{fittype}', please choose a valid fitting model, or add a new one into the code."
         logging.warning(msg)
@@ -798,6 +902,11 @@ def model_addon(fittype):
     elif fittype == 'twod_gauss3blob':
         label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle", "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"]
         unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
+        ndim = len(label)
+
+    elif fittype in ('simgauss', 'twod_simgauss'):
+        label = ["Blob LogFlux", "Blob LogSigma", "Dist", "Angle", "PA", "Offset RA", "Offset Dec"]
+        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec"]
         ndim = len(label)
 
     else:
