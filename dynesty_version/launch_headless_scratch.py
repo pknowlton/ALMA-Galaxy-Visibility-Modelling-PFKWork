@@ -31,7 +31,7 @@ from canfar.sessions import Session
 # Directory and data paths on the CANFAR /arc filesystem
 in_dir = '/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version/input_dir'
 out_dir = '/arc/projects/uvdisk_fit/dynest_product_dir/'
-data_path = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable.txt'
+data_path = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable_simgauss.txt'
 
 # ------------------------------------------------------------------------------
 # Command-Line Argument Parsing

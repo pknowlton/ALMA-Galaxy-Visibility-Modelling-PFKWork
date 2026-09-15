@@ -213,22 +213,22 @@ def main():
     # --------------------------------------------------------------------------
     # 3. Load Observed Visibilities for Residual Calculation
     # --------------------------------------------------------------------------
-    ms = './casa_dir_simgauss/M95_C5+C2_cont93.ms'
-    msx = './casa_dir_simgauss/M95_C5+C2_cont93_trimmmedXX.ms'
-    msy = './casa_dir_simgauss/M95_C5+C2_cont93_trimmmedYY.ms'
+    ms = './casa_dir_simgauss/M95_C5+C2_cont93_uvtable_simgauss.ms'
+    msx = './casa_dir_simgauss/M95_C5+C2_cont93_trimmedXX_simgauss.ms'
+    msy = './casa_dir_simgauss/M95_C5+C2_cont93_trimmedYY_simgauss.ms'
 
     data_imgname = './casa_dir_simgauss/M95_cont93GHz_auto'
     resid_imgname = './casa_dir_simgauss/M95_cont93GHz_residual'
 
     # Load XX baseline visibilities
-    u_datx, v_datx, Re_datx, Im_datx, w_datx = np.require(np.loadtxt(msx + '.uvtable.txt', unpack=True), requirements='C')
+    u_datx, v_datx, Re_datx, Im_datx, w_datx, freq_datx = np.require(np.loadtxt(msx + '.uvtable.txt', unpack=True), requirements='C')
     wavelength = 299792458 / 93e9
     u_datx /= wavelength
     v_datx /= wavelength
     vis_datx = np.array(Re_datx + 1j * Im_datx, dtype=np.complex256)
 
     # Load YY baseline visibilities
-    u_daty, v_daty, Re_daty, Im_daty, w_daty = np.require(np.loadtxt(msy + '.uvtable.txt', unpack=True), requirements='C')
+    u_daty, v_daty, Re_daty, Im_daty, w_daty, freq_datx = np.require(np.loadtxt(msy + '.uvtable.txt', unpack=True), requirements='C')
     u_daty /= wavelength
     v_daty /= wavelength
     vis_daty = np.array(Re_daty + 1j * Im_daty, dtype=np.complex256)
