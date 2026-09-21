@@ -263,8 +263,8 @@ def twod_gaussring_model(peak, sigma, rad, inc, pa, dra, ddec, nxy, dxy, version
         yy_shifted = yy - ddec
 
         # Rotate coordinates by position angle (PA, East of North)
-        xpa = xx_shifted * np.cos(pa) + yy_shifted * np.sin(pa)
-        ypa = -xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
 
         # Deproject inclined circular ring into an ellipse
         xinc = xpa / np.cos(inc)
@@ -393,8 +393,8 @@ def twod_gauss1blob_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b
         xx_shifted = xx - dra
         yy_shifted = yy - ddec
 
-        xpa = xx_shifted * np.cos(pa) + yy_shifted * np.sin(pa)
-        ypa = -xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
 
         xinc = xpa / np.cos(inc)
         radius_vec = np.hypot(xinc, ypa)
@@ -486,8 +486,8 @@ def twod_gauss1blob_2peak_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b11, 
         xx_shifted = xx - dra
         yy_shifted = yy - ddec
 
-        xpa = xx_shifted * np.cos(pa) + yy_shifted * np.sin(pa)
-        ypa = -xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
 
         xinc = xpa / np.cos(inc)
         radius_vec = np.hypot(xinc, ypa)
@@ -580,8 +580,8 @@ def twod_gauss1blob_2peak_dp_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1
         xx_shifted = xx - dra
         yy_shifted = yy - ddec
 
-        xpa = xx_shifted * np.cos(pa) + yy_shifted * np.sin(pa)
-        ypa = -xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
 
         xinc = xpa / np.cos(inc)
         radius_vec = np.hypot(xinc, ypa)
@@ -674,8 +674,8 @@ def twod_gauss3blob_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b
         xx_shifted = xx - dra
         yy_shifted = yy - ddec
 
-        xpa = xx_shifted * np.cos(pa) + yy_shifted * np.sin(pa)
-        ypa = -xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
 
         xinc = xpa / np.cos(inc)
         radius_vec = np.hypot(xinc, ypa)
@@ -788,8 +788,8 @@ def twod_simgauss_model(peak, sigma, dra, ddec, pa, dist, ang, nxy, dxy, version
         xx_shifted = xx - dra
         yy_shifted = yy - ddec
 
-        xpa = xx_shifted * np.cos(pa) + yy_shifted * np.sin(pa)
-        ypa = -xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
 
         blob_model_jysr = gaussblob_prof(peak, sigma, xpa, ypa, xdot, ydot, 1)
         return blob_model_jysr
