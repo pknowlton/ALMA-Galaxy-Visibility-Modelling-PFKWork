@@ -119,11 +119,11 @@ def twod_gauss1blob_ptform(u):
 
     # Blob 1: LogFlux in [-5.5, -3.0], LogSigma in [-1.301, 0.0] (0.05" to 1.0")
     v[7] = -5.5 + u[7] * (-3.0 - (-5.5))
-    v[8] = -1.301 + u[8] * (0.0 - (-1.301))
+    v[8] = -1.301 + u[8] * (-0.398 - (-1.301))
     # Distance: uniform area density on disk in [4.0, 10.0] arcsec (Audit P1 Item 2)
     v[9] = uniform_area_radius(u[9], 4.0, 10.0)
     # Angle: South cluster region [150, 210] deg
-    v[10] = 150.0 + u[10] * (210.0 - 150.0)
+    v[10] = 330.0 + u[10] * (390.0 - 330.0)
     return v
 
 #########################

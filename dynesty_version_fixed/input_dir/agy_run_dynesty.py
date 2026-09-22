@@ -140,7 +140,7 @@ def main():
         description="Run Dynesty dynamic nested sampling for ALMA visibility modeling."
     )
     parser.add_argument("fittype", type=str, help="Model profile identifier (e.g., 'twod_gaussring').")
-    parser.add_argument("--nlive", type=int, default=500, help="Initial number of live points (default: 500).")
+    parser.add_argument("--nlive", type=int, default=250, help="Initial number of live points (default: 500).")
     parser.add_argument("--maxbatch", type=int, default=5, help="Maximum number of dynamic batches to add (default: 5).")
     parser.add_argument("--dlogz", type=float, default=0.1, help="Target evidence stopping criterion dlogz (default: 0.1).")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42).")
