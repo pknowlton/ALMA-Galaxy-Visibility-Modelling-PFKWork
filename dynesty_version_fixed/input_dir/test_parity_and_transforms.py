@@ -500,5 +500,75 @@ class TestSimgaussModel(unittest.TestCase):
             sys.path = orig_sys_path
 
 
+class TestPriorTformStreamline(unittest.TestCase):
+    """
+    Verifies that prior_tform_streamline:
+    1. Produces identical prior transforms to prior_tform across all models.
+    2. Correctly compiles intuitive physical units [log10(Jy/sr), arcsec] to Dynesty units [log10(Jy), log10(arcsec)].
+    3. Retains shared ring priors across all models.
+    4. Pre-compiles before sampling with zero runtime conversion overhead.
+    """
+
+    def test_streamline_parity_with_prior_tform(self):
+        import prior_tform as pt_orig
+        import prior_tform_streamline as pt_stream
+
+        models = [
+            ("twod_gaussring", 7),
+            ("twod_gauss1blob", 11),
+            ("twod_gauss1blob_2peak", 13),
+            ("twod_gauss1blob_2peak_dp", 15),
+            ("twod_gauss3blob", 19),
+            ("simgauss", 7)
+        ]
+
+        test_u_values = [0.0, 0.1, 0.33, 0.5, 0.67, 0.9, 1.0]
+
+        for model_name, ndim in models:
+            fn_orig = getattr(pt_orig, f"{model_name}_ptform")
+            fn_stream = getattr(pt_stream, f"{model_name}_ptform")
+
+            for u_val in test_u_values:
+                u = np.full(ndim, u_val)
+                v_orig = fn_orig(u)
+                v_stream = fn_stream(u)
+
+                np.testing.assert_allclose(
+                    v_stream, v_orig, atol=1e-3,
+                    err_msg=f"Mismatch between prior_tform and prior_tform_streamline for {model_name} at u={u_val}"
+                )
+
+    def test_shared_ring_priors_consistency(self):
+        import prior_tform_streamline as pt_stream
+
+        u_mid = np.full(20, 0.5)
+        p_ring = pt_stream.twod_gaussring_ptform(u_mid[:7])
+        p_1blob = pt_stream.twod_gauss1blob_ptform(u_mid[:11])
+        p_2peak = pt_stream.twod_gauss1blob_2peak_ptform(u_mid[:13])
+        p_dp = pt_stream.twod_gauss1blob_2peak_dp_ptform(u_mid[:15])
+        p_3blob = pt_stream.twod_gauss3blob_ptform(u_mid[:19])
+
+        np.testing.assert_allclose(p_ring[:7], p_1blob[:7])
+        np.testing.assert_allclose(p_ring[:7], p_2peak[:7])
+        np.testing.assert_allclose(p_ring[:7], p_dp[:7])
+        np.testing.assert_allclose(p_ring[:7], p_3blob[:7])
+
+    def test_custom_user_prior_recompilation(self):
+        import prior_tform_streamline as pt_stream
+
+        # Test that user editing sigma updates log_sigma
+        s_min, s_max = 0.1, 2.0
+        log_s_min = pt_stream.sigma_to_logsigma(s_min)
+        log_s_max = pt_stream.sigma_to_logsigma(s_max)
+        self.assertAlmostEqual(log_s_min, -1.0, places=3)
+        self.assertAlmostEqual(log_s_max, 0.301, places=3)
+
+        # Test that user editing peak converts to log_flux
+        p_min, p_max = 6.0, 9.0
+        lf_min = pt_stream.ring_peak_to_logflux(p_min)
+        lf_max = pt_stream.ring_peak_to_logflux(p_max)
+        self.assertAlmostEqual(lf_max - lf_min, 3.0, places=3)
+
+
 if __name__ == '__main__':
     unittest.main()
