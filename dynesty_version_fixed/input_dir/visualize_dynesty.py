@@ -436,7 +436,7 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
                           pars_bf[s_idx], q_s)
 
     # Render Multi-Level Table onto Matplotlib Figure
-    col_labels = ["Parameter", "Prior Low", "Prior High", "ML Estimate", "Median (+84% / -16%)"]
+    col_labels = ["Parameter", "Low", "High", "ML Estimate", "Median Estimate"]
     col_widths = [0.32, 0.15, 0.15, 0.16, 0.22]
     top_widths = [0.32, 0.30, 0.38]
 
@@ -454,7 +454,7 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
 
     # Top Super-Header Table: spans (Prior information) and (Results)
     tab_top = ax_tab.table(
-        cellText=[['', '(Prior information)', '(Results)']],
+        cellText=[['', 'Prior - U(Low, High)', 'Results']],
         colWidths=top_widths,
         bbox=[left, bottom_main + main_h, width, top_h],
         cellLoc='center'
