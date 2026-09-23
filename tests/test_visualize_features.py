@@ -32,6 +32,7 @@ for mod_name in ['casatools', 'casatasks', 'galario', 'galario.double', 'corner'
 from visualize_dynesty import convolve_model_with_beam, safe_add_beam, render_summary_table_page
 import prior_tform_streamline as pt_stream
 from uvplot import UVTable
+from astropy.visualization.wcsaxes import WCSAxes
 
 class MockDynestyResults:
     def __init__(self, n_samples=100, n_dim=11):
@@ -72,7 +73,8 @@ def test_safe_add_beam():
     hdr['BPA'] = 45.0
 
     fig = plt.figure()
-    ax = plt.subplot(111, projection=w)
+    ax = WCSAxes(fig, [0.1, 0.1, 0.8, 0.8], wcs=w)
+    fig.add_axes(ax)
     ax.imshow(np.zeros((64, 64)))
     safe_add_beam(ax, header=hdr, frame=False, color='white', corner='bottom left')
     plt.close(fig)
@@ -102,7 +104,7 @@ def test_summary_table_rendering():
         print(f"PASS: Summary table successfully rendered for {fittype} ({ndim} params).")
 
 def test_uvplot_generation():
-    """Verify uvplot UVTable plotting logic without errors."""
+    """Verify uvplot UVTable plotting logic with wide figure and clean legend."""
     u = np.random.randn(1000) * 1e5
     v = np.random.randn(1000) * 1e5
     re = np.random.randn(1000) * 0.01
@@ -112,11 +114,29 @@ def test_uvplot_generation():
     uv_mod = UVTable(uvtable=[u, v, re*0.9, im*0.9, w], columns=['u', 'v', 'Re', 'Im', 'weights'])
     bin_size = np.max(np.hypot(u, v)) / 20.0
 
-    axes_uv = uv_data.plot(color='black', linestyle='.', label='Data', uvbin_size=bin_size)
-    uv_mod.plot(color='crimson', linestyle='-', label='Model', axes=list(axes_uv), uvbin_size=bin_size, yerr=False)
-    fig_uv = axes_uv[0].figure
+    fig_uv = plt.figure(figsize=(24, 10))
+    gs = fig_uv.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.0)
+    ax_uv1 = fig_uv.add_subplot(gs[0])
+    ax_uv2 = fig_uv.add_subplot(gs[1], sharex=ax_uv1)
+    axes_list = [ax_uv1, ax_uv2]
+
+    uv_data.plot(axes=axes_list, color='black', linestyle='.', label='Observed Data', uvbin_size=bin_size)
+    uv_mod.plot(axes=axes_list, color='crimson', linestyle='-', label='Model Best Fit', uvbin_size=bin_size, yerr=False)
+
+    ax_uv1.yaxis.set_label_coords(-0.05, 0.5)
+    ax_uv2.yaxis.set_label_coords(-0.05, 0.5)
+    ax_uv1.legend(loc='upper right', fontsize=16)
+    if ax_uv2.get_legend():
+        ax_uv2.get_legend().remove()
+    fig_uv.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.12, hspace=0.0)
+
+    # Verify size and labels
+    assert fig_uv.get_size_inches()[0] == 24.0
+    _, labels = ax_uv1.get_legend_handles_labels()
+    assert 'Observed Data' in labels
+    assert '(XX)' not in labels[0]
     plt.close(fig_uv)
-    print("PASS: UVTable plotting verified.")
+    print("PASS: Wide UVTable plotting verified.")
 
 def test_runplot_evidence_limits():
     """Verify that evidence panel y-limits adapt to show flat -> increasing -> flat plateau."""

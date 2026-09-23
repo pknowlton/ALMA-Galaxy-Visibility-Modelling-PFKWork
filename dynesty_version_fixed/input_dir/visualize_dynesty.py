@@ -32,7 +32,13 @@ from astropy import units as u
 from astropy.nddata.utils import Cutout2D
 from astropy.coordinates import SkyCoord
 from astropy.convolution import Gaussian2DKernel, convolve_fft
-from astropy.visualization.wcsaxes import add_beam
+try:
+    from astropy.visualization.wcsaxes import add_beam
+except ImportError:
+    try:
+        from astropy.visualization.wcsaxes.patches import add_beam
+    except ImportError:
+        add_beam = None
 from matplotlib import rc
 from galario.double import get_image_size
 from casatools import table
@@ -169,56 +175,84 @@ def safe_add_beam(ax, header=None, frame=False, color='white', corner='bottom le
     """
     Safely adds a synthesised restoring beam patch to a celestial WCSAxes subplot.
     """
-    if header is not None and 'BMAJ' in header:
+    if header is None or 'BMAJ' not in header:
+        return
+    if add_beam is not None:
         try:
             add_beam(ax, header=header, frame=frame, color=color, corner=corner)
+            return
         except Exception as e:
             logging.warning(f"Could not add beam to axis: {e}")
+    # Fallback for environments with astropy < 5.3 lacking add_beam
+    try:
+        from matplotlib.patches import Ellipse
+        bmaj_deg = header.get('BMAJ', 0.0)
+        bmin_deg = header.get('BMIN', 0.0)
+        bpa_deg = header.get('BPA', 0.0)
+        cdelt = abs(header.get('CDELT2', header.get('CD2_2', 1.0 / 3600.0)))
+        bmaj_pix = bmaj_deg / cdelt
+        bmin_pix = bmin_deg / cdelt
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        x0 = min(xlim) + 0.1 * abs(xlim[1] - xlim[0])
+        y0 = min(ylim) + 0.1 * abs(ylim[1] - ylim[0])
+        beam_patch = Ellipse((x0, y0), width=bmin_pix, height=bmaj_pix, angle=bpa_deg,
+                             edgecolor=color, facecolor=color, alpha=0.8)
+        ax.add_patch(beam_patch)
+    except Exception as e:
+        logging.warning(f"Could not add fallback beam patch: {e}")
 
 def render_summary_table_page(res, pars_bf, weights, fittype, pp):
     """
     Constructs and saves the final summary table PDF page containing:
-    - Free parameters fitted by Dynesty
+    - Free parameters fitted by Dynesty with integrated units: "Parameter (unit)"
     - Physical conversions:
         - Ring Flux (Jy) [after Ring LogFlux]
-        - Ring Peak (Jy/sr) [after Ring Flux]
+        - Ring LogPeak (log(Jy/sr)) [after Ring Flux]
+        - Ring LogSigma (log(arcsec)) [after Ring LogPeak]
         - Ring Sigma (arcsec) [after Ring LogSigma]
         - Ring FWHM (arcsec) [after Ring Sigma]
-        - Equivalent Flux, Peak, Sigma, and FWHM for every modeled blob/clump component.
-    - Columns: Prior Low, Prior High, ML Estimate, 50th quantile, 16th quantile, 84th quantile.
+        - Equivalent Flux, LogPeak, Sigma, and FWHM for every modeled blob/clump component.
+    - Two-tiered table header:
+        - (Prior information) spanning Prior Low & Prior High
+        - (Results) spanning ML Estimate & Median (+84% / -16%)
     """
     ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
     FWHM_FACTOR = 2.354820045
 
     def get_quantiles(arr):
-        return dyfunc.quantile(np.asarray(arr), [0.16, 0.50, 0.84], weights=weights)
+        return dyfunc.quantile(np.asarray(arr), [0.159, 0.50, 0.841], weights=weights)
 
-    def fmt_cell(val):
-        if val is None or np.isnan(val):
+    def fmt_val(v):
+        if v is None or np.isnan(v):
             return "-"
-        abs_v = abs(val)
+        abs_v = abs(v)
         if abs_v == 0.0:
             return "0.0"
-        if abs_v >= 1e4 or abs_v < 1e-2:
-            return f"{val:.3e}"
+        if abs_v >= 1e4 or (abs_v < 1e-3 and abs_v > 0):
+            return f"{v:.3e}"
         elif abs_v >= 100.0:
-            return f"{val:.2f}"
+            return f"{v:.2f}"
         else:
-            return f"{val:.3f}"
+            return f"{v:.4f}"
 
-    # List of table rows: [Parameter, Unit, Prior Low, Prior High, ML, 50th, 16th, 84th]
+    def fmt_quantiles(q_vals):
+        median = q_vals[1]
+        p1 = max(0.0, q_vals[2] - median)
+        m1 = max(0.0, median - q_vals[0])
+        return f"{fmt_val(median)} (+{fmt_val(p1)} / -{fmt_val(m1)})"
+
+    # List of table rows: [Parameter (unit), Prior Low, Prior High, ML, Quantile String]
     table_rows = []
 
     def add_table_row(name, unit, p_low, p_high, ml_val, q_vals):
+        param_label = f"{name} ({unit})" if unit else name
         table_rows.append([
-            name,
-            unit,
-            fmt_cell(p_low),
-            fmt_cell(p_high),
-            fmt_cell(ml_val),
-            fmt_cell(q_vals[1]),
-            fmt_cell(q_vals[0]),
-            fmt_cell(q_vals[2])
+            param_label,
+            fmt_val(p_low),
+            fmt_val(p_high),
+            fmt_val(ml_val),
+            fmt_quantiles(q_vals)
         ])
 
     # 1. Ring Component (if present in model)
@@ -234,18 +268,20 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         add_table_row("Ring Flux", "Jy", 10.0**pt_stream.RING_PRIOR_RANGES[0, 0], 10.0**pt_stream.RING_PRIOR_RANGES[0, 1],
                       10.0**pars_bf[0], q_flux)
 
-        # Row 3: Ring Peak (Jy/sr)
+        # Row 3: Ring LogPeak (log(Jy/sr))
         cos_inc_samples = np.maximum(np.cos(np.radians(res.samples[:, 3])), 0.05)
         area_ring_samples = ((2.0 * np.pi)**1.5) * (res.samples[:, 2] * ARCSEC_TO_RAD) * (10.0**res.samples[:, 1] * ARCSEC_TO_RAD) * cos_inc_samples
         ring_peak_samples = flux_samples / np.maximum(area_ring_samples, 1e-30)
-        q_rpeak = get_quantiles(ring_peak_samples)
+        ring_logpeak_samples = np.log10(np.maximum(ring_peak_samples, 1e-30))
+        q_rpeak = get_quantiles(ring_logpeak_samples)
 
         cos_inc_ml = max(float(np.cos(np.radians(pars_bf[3]))), 0.05)
         area_ring_ml = ((2.0 * np.pi)**1.5) * (pars_bf[2] * ARCSEC_TO_RAD) * (10.0**pars_bf[1] * ARCSEC_TO_RAD) * cos_inc_ml
         ring_peak_ml = (10.0**pars_bf[0]) / max(area_ring_ml, 1e-30)
+        ring_logpeak_ml = np.log10(max(ring_peak_ml, 1e-30))
 
-        add_table_row("Ring Peak", "Jy/sr", 10.0**pt_stream.COMMON_RING_PRIORS[0, 0], 10.0**pt_stream.COMMON_RING_PRIORS[0, 1],
-                      ring_peak_ml, q_rpeak)
+        add_table_row("Ring LogPeak", "log(Jy/sr)", pt_stream.COMMON_RING_PRIORS[0, 0], pt_stream.COMMON_RING_PRIORS[0, 1],
+                      ring_logpeak_ml, q_rpeak)
 
         # Row 4: Ring LogSigma
         q_ls = get_quantiles(res.samples[:, 1])
@@ -285,15 +321,17 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         add_table_row(f"{blob_label} Flux", "Jy", 10.0**prior_logflux_range[0], 10.0**prior_logflux_range[1],
                       10.0**pars_bf[idx_flux], q_bflux)
 
-        # 3. Peak (Jy/sr)
+        # 3. LogPeak (log(Jy/sr))
         b_area_samples = 2.0 * np.pi * ((10.0**res.samples[:, idx_sigma] * ARCSEC_TO_RAD)**2)
         b_peak_samples = b_flux_samples / np.maximum(b_area_samples, 1e-30)
-        q_bpeak = get_quantiles(b_peak_samples)
+        b_logpeak_samples = np.log10(np.maximum(b_peak_samples, 1e-30))
+        q_bpeak = get_quantiles(b_logpeak_samples)
 
         b_area_ml = 2.0 * np.pi * ((10.0**pars_bf[idx_sigma] * ARCSEC_TO_RAD)**2)
         b_peak_ml = (10.0**pars_bf[idx_flux]) / max(b_area_ml, 1e-30)
-        add_table_row(f"{blob_label} Peak", "Jy/sr", 10.0**prior_peak_log_range[0], 10.0**prior_peak_log_range[1],
-                      b_peak_ml, q_bpeak)
+        b_logpeak_ml = np.log10(max(b_peak_ml, 1e-30))
+        add_table_row(f"{blob_label} LogPeak", "log(Jy/sr)", prior_peak_log_range[0], prior_peak_log_range[1],
+                      b_logpeak_ml, q_bpeak)
 
         # 4. LogSigma
         prior_logsigma_min = np.log10(prior_sigma_range[0])
@@ -397,47 +435,61 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
             add_table_row(s_name, s_unit, pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 0], pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 1],
                           pars_bf[s_idx], q_s)
 
-    # Render Table onto Matplotlib Figure
-    col_labels = [
-        "Parameter",
-        "Unit",
-        "Prior Low",
-        "Prior High",
-        "ML Estimate",
-        "50th (Median)",
-        "16th",
-        "84th"
-    ]
+    # Render Multi-Level Table onto Matplotlib Figure
+    col_labels = ["Parameter", "Prior Low", "Prior High", "ML Estimate", "Median (+84% / -16%)"]
+    col_widths = [0.32, 0.15, 0.15, 0.16, 0.22]
+    top_widths = [0.32, 0.30, 0.38]
 
-    fig_height = max(8.5, 0.40 * len(table_rows) + 2.5)
+    fig_height = max(8.5, 0.38 * len(table_rows) + 2.0)
     fig_tab, ax_tab = plt.subplots(figsize=(14, fig_height))
     ax_tab.axis('off')
 
-    tab = ax_tab.table(
-        cellText=table_rows,
-        colLabels=col_labels,
-        loc='center',
+    n_rows = len(table_rows) + 1  # data rows + 1 subheader
+    h_row = 0.85 / (n_rows + 1)
+    main_h = n_rows * h_row
+    top_h = h_row
+    bottom_main = 0.05
+    left = 0.05
+    width = 0.90
+
+    # Top Super-Header Table: spans (Prior information) and (Results)
+    tab_top = ax_tab.table(
+        cellText=[['', '(Prior information)', '(Results)']],
+        colWidths=top_widths,
+        bbox=[left, bottom_main + main_h, width, top_h],
         cellLoc='center'
     )
-    tab.auto_set_font_size(False)
-    tab.set_fontsize(10)
-    tab.scale(1.05, 1.4)
 
-    # Style header row with light gray background
-    for col_idx in range(len(col_labels)):
-        cell = tab[0, col_idx]
-        cell.set_facecolor('#d9d9d9')
-        cell.set_text_props(weight='bold')
+    # Main Data Table
+    tab_main = ax_tab.table(
+        cellText=table_rows,
+        colLabels=col_labels,
+        colWidths=col_widths,
+        bbox=[left, bottom_main, width, main_h],
+        cellLoc='center'
+    )
+
+    # Style top super-header
+    tab_top[(0, 0)].set_visible(False)
+    tab_top[(0, 1)].set_facecolor('#c0c0c0')
+    tab_top[(0, 1)].set_text_props(weight='bold', size=11)
+    tab_top[(0, 2)].set_facecolor('#c0c0c0')
+    tab_top[(0, 2)].set_text_props(weight='bold', size=11)
+
+    # Style main subheader
+    for c in range(5):
+        tab_main[(0, c)].set_facecolor('#d9d9d9')
+        tab_main[(0, c)].set_text_props(weight='bold', size=10)
 
     # Alternate row colors for enhanced readability
     for row_idx in range(1, len(table_rows) + 1):
         bg_color = '#f5f5f5' if row_idx % 2 == 0 else '#ffffff'
-        for col_idx in range(len(col_labels)):
-            tab[row_idx, col_idx].set_facecolor(bg_color)
+        for col_idx in range(5):
+            tab_main[(row_idx, col_idx)].set_facecolor(bg_color)
+            tab_main[(row_idx, col_idx)].set_text_props(size=10)
 
     clean_fittype = fittype.replace('_', r'\_')
     fig_tab.suptitle(f"Dynesty Posterior Summary and Derived Parameters: {clean_fittype}", fontsize=16, y=0.98)
-    fig_tab.tight_layout()
     pp.savefig(fig_tab, bbox_inches='tight')
     plt.close(fig_tab)
     logging.info('Successfully saved final summary table page to PDF...')
@@ -534,35 +586,7 @@ def main():
     # --------------------------------------------------------------------------
     # 2. Dynesty Run Summary & Corner Plots
     # --------------------------------------------------------------------------
-    try:
-        fig, axes = dyplot.runplot(res, logplot=True)
-    except Exception:
-        fig, axes = dyplot.runplot(res)
-
-    # Adjust Panel 4 y-limits so evidence shows: flat baseline -> climb -> flat plateau
-    try:
-        ax_ev = axes.flatten()[3]
-        valid_logz = res.logz[np.isfinite(res.logz)]
-        if len(valid_logz) > 0:
-            final_logz = valid_logz[-1]
-            final_err = res.logzerr[-1] if (hasattr(res, 'logzerr') and len(res.logzerr) > 0 and np.isfinite(res.logzerr[-1])) else 0.5
-            ymax = final_logz + max(3.0 * final_err, 0.5)
-
-            # Determine stable prior baseline, skipping initial 1% transient points
-            n_pts = len(valid_logz)
-            i0 = min(max(int(0.01 * n_pts), 5), n_pts // 4)
-            stable_min = np.min(valid_logz[i0:])
-            total_drop = final_logz - stable_min
-
-            if total_drop > 0.5:
-                ymin = stable_min - 0.05 * total_drop
-            else:
-                ymin = final_logz - 5.0
-
-            ax_ev.set_ylim(ymin, ymax)
-    except Exception as e:
-        logging.warning(f"Could not adjust runplot evidence y-limits: {e}")
-
+    fig, axes = dyplot.runplot(res)
     fig.tight_layout()
     pp.savefig(fig)
     plt.close(fig)
@@ -649,15 +673,21 @@ def main():
         uvdist_max = np.max(np.hypot(u_datx, v_datx))
         uvbin_size = uvdist_max / 40.0
 
-        axes_uv = uv_data.plot(color='black', linestyle='.', label='Observed Data (XX)', uvbin_size=uvbin_size)
-        uv_mod.plot(color='crimson', linestyle='-', label='Model Best Fit', axes=list(axes_uv), uvbin_size=uvbin_size, yerr=False)
+        fig_uv = plt.figure(figsize=(24, 10))
+        gs = fig_uv.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.0)
+        ax_uv1 = fig_uv.add_subplot(gs[0])
+        ax_uv2 = fig_uv.add_subplot(gs[1], sharex=ax_uv1)
+        axes_list = [ax_uv1, ax_uv2]
 
-        fig_uv = axes_uv[0].figure
-        clean_fittype = fittype.replace('_', r'\_')
-        axes_uv[0].set_title(f'UVPlot Visibility Radial Profile: {clean_fittype} (reduced $\\chi^2 = {red_chi2_x:.2f}$)')
-        axes_uv[0].legend(loc='upper right')
-        axes_uv[1].legend(loc='upper right')
-        fig_uv.tight_layout()
+        uv_data.plot(axes=axes_list, color='black', linestyle='.', label='Observed Data', uvbin_size=uvbin_size)
+        uv_mod.plot(axes=axes_list, color='crimson', linestyle='-', label='Model Best Fit', uvbin_size=uvbin_size, yerr=False)
+
+        ax_uv1.yaxis.set_label_coords(-0.05, 0.5)
+        ax_uv2.yaxis.set_label_coords(-0.05, 0.5)
+        ax_uv1.legend(loc='upper right', fontsize=16)
+        if ax_uv2.get_legend():
+            ax_uv2.get_legend().remove()
+        fig_uv.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.12, hspace=0.0)
         pp.savefig(fig_uv)
         plt.close(fig_uv)
         logging.info('Successfully saved uvplot visibility diagnostics plot...')
@@ -794,17 +824,14 @@ def main():
 
     ax1 = plt.subplot(131, projection=data_wcs)
     im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     ax2 = plt.subplot(132, projection=mod_wcs)
     im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax2.text(5, 5, 'Model Sky Intensity (Beam Convolved)', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     ax3 = plt.subplot(133, projection=data_wcs)
     im3 = ax3.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax3.text(5, 5, 'Dirty Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     axes = [ax1, ax2, ax3]
@@ -830,17 +857,14 @@ def main():
 
     ax1 = plt.subplot(131, projection=data_wcs)
     im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     ax2 = plt.subplot(132, projection=mod_wcs)
     im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax2.text(5, 5, 'Model Sky Intensity (Beam Convolved)', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     ax3 = plt.subplot(133, projection=data_wcs)
     im3 = ax3.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax3.text(5, 5, 'Dirty Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     axes = [ax1, ax2, ax3]
@@ -876,17 +900,14 @@ def main():
 
     ax1 = plt.subplot(131, projection=data_wcs)
     im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax1.text(5, 5, 'CLEAN Image', color='w', fontsize=16)
     cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     ax2 = plt.subplot(132, projection=mod_wcs)
     im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax2.text(5, 5, 'Model Sky Intensity (Beam Convolved)', color='w', fontsize=16)
     cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     ax3 = plt.subplot(133, projection=data_wcs)
     im3 = ax3.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    ax3.text(5, 5, 'Dirty Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
     axes = [ax1, ax2, ax3]
@@ -943,26 +964,44 @@ def main():
 
         cutout_data = Cutout2D(data_plot, blob_coord, blob_box_size, wcs=data_wcs)
         cutout_mod = Cutout2D(ring_model, blob_coord, blob_box_size, wcs=mod_wcs)
-        cutout_mod_int = Cutout2D(ring_model_intrinsic_mjy, blob_coord, blob_box_size, wcs=mod_wcs)
         cutout_res = Cutout2D(resid_plot, blob_coord, blob_box_size, wcs=data_wcs)
+        cutout_mod_int = Cutout2D(ring_model_intrinsic_mjy, blob_coord, blob_box_size, wcs=mod_wcs)
+
+        # Shared scale for convolved data, convolved model, and residuals
+        shared_cut_data = [cutout_data.data, cutout_mod.data, cutout_res.data]
+        vmin_shared = min(0.0, min(np.percentile(d, 1) for d in shared_cut_data))
+        vmax_shared = max(np.max(d) for d in shared_cut_data)
+        ylim_min_shared = vmin_shared - 0.02 * (vmax_shared - vmin_shared) if vmin_shared < 0 else 0.0
+        ylim_max_shared = vmax_shared * 1.05
+
+        # Independent scale for the unconvolved intrinsic model
+        unconv_data = cutout_mod_int.data
+        vmin_unconv = min(0.0, float(np.percentile(unconv_data, 1)))
+        vmax_unconv = float(np.max(unconv_data))
+        ylim_min_unconv = vmin_unconv - 0.02 * (vmax_unconv - vmin_unconv) if vmin_unconv < 0 else 0.0
+        ylim_max_unconv = vmax_unconv * 1.05
 
         cutouts = [
-            ('Observed CLEAN Image', cutout_data),
-            ('Model Sky Intensity (Beam Convolved)', cutout_mod),
-            ('Intrinsic Sky Model (Unconvolved)', cutout_mod_int),
-            ('Dirty Residual Visibilities', cutout_res)
+            ('Observed CLEAN Image', cutout_data, False),
+            ('Model Sky Intensity (Beam Convolved)', cutout_mod, False),
+            ('Dirty Residual Visibilities', cutout_res, False),
+            ('Intrinsic Sky Model (Unconvolved)', cutout_mod_int, True)
         ]
 
-        all_cut_data = [cut.data for _, cut in cutouts]
-        vmin_zoom = min(0.0, min(np.percentile(d, 1) for d in all_cut_data))
-        vmax_zoom = max(np.max(d) for d in all_cut_data)
-
-        ylim_min = vmin_zoom - 0.02 * (vmax_zoom - vmin_zoom) if vmin_zoom < 0 else 0.0
-        ylim_max = vmax_zoom * 1.05
-
-        for target_name, cutout in cutouts:
+        for target_name, cutout, is_unconv in cutouts:
             cut_data = cutout.data
             cut_wcs = cutout.wcs
+
+            if is_unconv:
+                vmin_zoom = vmin_unconv
+                vmax_zoom = vmax_unconv
+                ylim_min = ylim_min_unconv
+                ylim_max = ylim_max_unconv
+            else:
+                vmin_zoom = vmin_shared
+                vmax_zoom = vmax_shared
+                ylim_min = ylim_min_shared
+                ylim_max = ylim_max_shared
 
             cx_f, cy_f = cut_wcs.world_to_pixel(blob_coord)
             cx = int(round(float(cx_f)))
@@ -989,7 +1028,6 @@ def main():
 
             ax_img = plt.subplot(131, projection=cut_wcs)
             im_zoom = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower', cmap='inferno', rasterized=True)
-            ax_img.text(5, 5, f'{target_name} (Zoom)', color='w', fontsize=16)
             cbar_zoom = plt.colorbar(mappable=im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
             cbar_zoom.set_label(r'Specific Intensity (MJy/sr)', size=16)
 
