@@ -131,10 +131,10 @@ COMMON_RING_PRIORS = np.array([
 
 # twod_gauss1blob: Single Gaussian Blob (parameters 7-10)
 GAUSS1BLOB_USER_PRIORS = np.array([
-    [5.632, 8.132], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
-    [0.05, 1.0],    # 8:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, 0.0]
+    [6.030, 8.530], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 8:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
     [4.0, 10.0],    # 9:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [150.0, 210.0]  # 10: Blob 1 Azimuthal Angle [deg] (East of North, counter-clockwise)
+    [330.0, 390.0]  # 10: Blob 1 Azimuthal Angle [deg] (East of North, counter-clockwise)
 ], dtype=float)
 
 # twod_gauss1blob_2peak: Concentric Core + Envelope Clump (parameters 7-12)

@@ -1,4 +1,4 @@
-"""
+r"""
 Prior Transformations for Dynesty Nested Sampling
 ===================================================
 In Bayesian nested sampling (Dynesty), sampling is initially performed on an

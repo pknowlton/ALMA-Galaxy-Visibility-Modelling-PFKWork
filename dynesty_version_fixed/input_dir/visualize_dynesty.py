@@ -1,4 +1,4 @@
-"""
+r"""
 Dynesty Visualization, Residual Imaging, and Post-Processing
 =============================================================
 This script post-processes the results of a Dynesty nested sampling run:
@@ -32,6 +32,7 @@ from astropy import units as u
 from astropy.nddata.utils import Cutout2D
 from astropy.coordinates import SkyCoord
 from astropy.convolution import Gaussian2DKernel, convolve_fft
+from astropy.visualization.wcsaxes import add_beam
 from matplotlib import rc
 from galario.double import get_image_size
 from casatools import table
@@ -44,19 +45,25 @@ from dynesty import utils as dyfunc
 from dynesty import plotting as dyplot
 from model_prof import model_prof, model_addon
 from radec_calc import sun_radec, dynest_radec, make_model_wcs
+import prior_tform_streamline as pt_stream
+from uvplot import UVTable
 from matplotlib.backends.backend_pdf import PdfPages
 import logging
 import corner
 
-# Enable LaTeX typesetting for figure labels and text annotations
-rc('text', usetex=True)
+import shutil
+# Enable LaTeX typesetting if latex is available on the host system
+if shutil.which('latex'):
+    rc('text', usetex=True)
+else:
+    rc('text', usetex=False)
 font = {'family': 'serif',
         'weight': 'bold',
         'size': '14'}
 rc('font', **font)
 
 def jybm_to_jysr(infile):
-    """
+    r"""
     Computes the beam solid angle factor to convert Jy/beam into Jy/steradian.
 
     Radio interferometric images produced by CLEAN deconvolution are calibrated in
@@ -146,8 +153,10 @@ def convolve_model_with_beam(model_2d, bmaj_deg, bmin_deg, bpa_deg, pixarcsec):
     sigma_maj_pix = (bmaj_deg * 3600.0 * fwhm_to_sigma) / pixarcsec
     sigma_min_pix = (bmin_deg * 3600.0 * fwhm_to_sigma) / pixarcsec
 
-    # Astropy Gaussian2DKernel theta is measured counter-clockwise from X-axis
-    theta_rad = np.radians(bpa_deg + 90.0)
+    # Astropy Gaussian2DKernel theta is measured counter-clockwise from X-axis.
+    # At theta = 0, y_stddev (sigma_maj) is aligned with Y-axis (North).
+    # Since BPA is measured East of North (counter-clockwise on the sky), theta = bpa_deg.
+    theta_rad = np.radians(bpa_deg)
     beam_kernel = Gaussian2DKernel(
         x_stddev=sigma_min_pix,
         y_stddev=sigma_maj_pix,
@@ -155,6 +164,282 @@ def convolve_model_with_beam(model_2d, bmaj_deg, bmin_deg, bpa_deg, pixarcsec):
     )
     convolved = convolve_fft(model_2d, beam_kernel, normalize_kernel=True)
     return convolved
+
+def safe_add_beam(ax, header=None, frame=False, color='white', corner='bottom left'):
+    """
+    Safely adds a synthesised restoring beam patch to a celestial WCSAxes subplot.
+    """
+    if header is not None and 'BMAJ' in header:
+        try:
+            add_beam(ax, header=header, frame=frame, color=color, corner=corner)
+        except Exception as e:
+            logging.warning(f"Could not add beam to axis: {e}")
+
+def render_summary_table_page(res, pars_bf, weights, fittype, pp):
+    """
+    Constructs and saves the final summary table PDF page containing:
+    - Free parameters fitted by Dynesty
+    - Physical conversions:
+        - Ring Flux (Jy) [after Ring LogFlux]
+        - Ring Peak (Jy/sr) [after Ring Flux]
+        - Ring Sigma (arcsec) [after Ring LogSigma]
+        - Ring FWHM (arcsec) [after Ring Sigma]
+        - Equivalent Flux, Peak, Sigma, and FWHM for every modeled blob/clump component.
+    - Columns: Prior Low, Prior High, ML Estimate, 50th quantile, 16th quantile, 84th quantile.
+    """
+    ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
+    FWHM_FACTOR = 2.354820045
+
+    def get_quantiles(arr):
+        return dyfunc.quantile(np.asarray(arr), [0.16, 0.50, 0.84], weights=weights)
+
+    def fmt_cell(val):
+        if val is None or np.isnan(val):
+            return "-"
+        abs_v = abs(val)
+        if abs_v == 0.0:
+            return "0.0"
+        if abs_v >= 1e4 or abs_v < 1e-2:
+            return f"{val:.3e}"
+        elif abs_v >= 100.0:
+            return f"{val:.2f}"
+        else:
+            return f"{val:.3f}"
+
+    # List of table rows: [Parameter, Unit, Prior Low, Prior High, ML, 50th, 16th, 84th]
+    table_rows = []
+
+    def add_table_row(name, unit, p_low, p_high, ml_val, q_vals):
+        table_rows.append([
+            name,
+            unit,
+            fmt_cell(p_low),
+            fmt_cell(p_high),
+            fmt_cell(ml_val),
+            fmt_cell(q_vals[1]),
+            fmt_cell(q_vals[0]),
+            fmt_cell(q_vals[2])
+        ])
+
+    # 1. Ring Component (if present in model)
+    if fittype not in ('simgauss', 'twod_simgauss'):
+        # Row 1: Ring LogFlux
+        q_lf = get_quantiles(res.samples[:, 0])
+        add_table_row("Ring LogFlux", "log(Jy)", pt_stream.RING_PRIOR_RANGES[0, 0], pt_stream.RING_PRIOR_RANGES[0, 1],
+                      pars_bf[0], q_lf)
+
+        # Row 2: Ring Flux (Jy)
+        flux_samples = 10.0**res.samples[:, 0]
+        q_flux = get_quantiles(flux_samples)
+        add_table_row("Ring Flux", "Jy", 10.0**pt_stream.RING_PRIOR_RANGES[0, 0], 10.0**pt_stream.RING_PRIOR_RANGES[0, 1],
+                      10.0**pars_bf[0], q_flux)
+
+        # Row 3: Ring Peak (Jy/sr)
+        cos_inc_samples = np.maximum(np.cos(np.radians(res.samples[:, 3])), 0.05)
+        area_ring_samples = ((2.0 * np.pi)**1.5) * (res.samples[:, 2] * ARCSEC_TO_RAD) * (10.0**res.samples[:, 1] * ARCSEC_TO_RAD) * cos_inc_samples
+        ring_peak_samples = flux_samples / np.maximum(area_ring_samples, 1e-30)
+        q_rpeak = get_quantiles(ring_peak_samples)
+
+        cos_inc_ml = max(float(np.cos(np.radians(pars_bf[3]))), 0.05)
+        area_ring_ml = ((2.0 * np.pi)**1.5) * (pars_bf[2] * ARCSEC_TO_RAD) * (10.0**pars_bf[1] * ARCSEC_TO_RAD) * cos_inc_ml
+        ring_peak_ml = (10.0**pars_bf[0]) / max(area_ring_ml, 1e-30)
+
+        add_table_row("Ring Peak", "Jy/sr", 10.0**pt_stream.COMMON_RING_PRIORS[0, 0], 10.0**pt_stream.COMMON_RING_PRIORS[0, 1],
+                      ring_peak_ml, q_rpeak)
+
+        # Row 4: Ring LogSigma
+        q_ls = get_quantiles(res.samples[:, 1])
+        add_table_row("Ring LogSigma", "log(arcsec)", pt_stream.RING_PRIOR_RANGES[1, 0], pt_stream.RING_PRIOR_RANGES[1, 1],
+                      pars_bf[1], q_ls)
+
+        # Row 5: Ring Sigma (arcsec)
+        sigma_samples = 10.0**res.samples[:, 1]
+        q_sigma = get_quantiles(sigma_samples)
+        add_table_row("Ring Sigma", "arcsec", pt_stream.COMMON_RING_PRIORS[1, 0], pt_stream.COMMON_RING_PRIORS[1, 1],
+                      10.0**pars_bf[1], q_sigma)
+
+        # Row 6: Ring FWHM (arcsec)
+        fwhm_samples = FWHM_FACTOR * sigma_samples
+        q_fwhm = get_quantiles(fwhm_samples)
+        add_table_row("Ring FWHM", "arcsec", FWHM_FACTOR * pt_stream.COMMON_RING_PRIORS[1, 0], FWHM_FACTOR * pt_stream.COMMON_RING_PRIORS[1, 1],
+                      FWHM_FACTOR * 10.0**pars_bf[1], q_fwhm)
+
+        # Rows 7-11: Remaining ring parameters
+        ring_param_names = ["Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
+        ring_param_units = ["arcsec", "degrees", "degrees", "arcsec", "arcsec"]
+        for p_idx, (p_name, p_unit) in enumerate(zip(ring_param_names, ring_param_units), start=2):
+            q_p = get_quantiles(res.samples[:, p_idx])
+            add_table_row(p_name, p_unit, pt_stream.COMMON_RING_PRIORS[p_idx, 0], pt_stream.COMMON_RING_PRIORS[p_idx, 1],
+                          pars_bf[p_idx], q_p)
+
+    # Helper function for adding a blob component
+    def add_blob_component(blob_label, idx_flux, idx_sigma, prior_logflux_range, prior_peak_log_range, prior_sigma_range):
+        # 1. LogFlux
+        q_lf = get_quantiles(res.samples[:, idx_flux])
+        add_table_row(f"{blob_label} LogFlux", "log(Jy)", prior_logflux_range[0], prior_logflux_range[1],
+                      pars_bf[idx_flux], q_lf)
+
+        # 2. Flux (Jy)
+        b_flux_samples = 10.0**res.samples[:, idx_flux]
+        q_bflux = get_quantiles(b_flux_samples)
+        add_table_row(f"{blob_label} Flux", "Jy", 10.0**prior_logflux_range[0], 10.0**prior_logflux_range[1],
+                      10.0**pars_bf[idx_flux], q_bflux)
+
+        # 3. Peak (Jy/sr)
+        b_area_samples = 2.0 * np.pi * ((10.0**res.samples[:, idx_sigma] * ARCSEC_TO_RAD)**2)
+        b_peak_samples = b_flux_samples / np.maximum(b_area_samples, 1e-30)
+        q_bpeak = get_quantiles(b_peak_samples)
+
+        b_area_ml = 2.0 * np.pi * ((10.0**pars_bf[idx_sigma] * ARCSEC_TO_RAD)**2)
+        b_peak_ml = (10.0**pars_bf[idx_flux]) / max(b_area_ml, 1e-30)
+        add_table_row(f"{blob_label} Peak", "Jy/sr", 10.0**prior_peak_log_range[0], 10.0**prior_peak_log_range[1],
+                      b_peak_ml, q_bpeak)
+
+        # 4. LogSigma
+        prior_logsigma_min = np.log10(prior_sigma_range[0])
+        prior_logsigma_max = np.log10(prior_sigma_range[1])
+        q_ls = get_quantiles(res.samples[:, idx_sigma])
+        add_table_row(f"{blob_label} LogSigma", "log(arcsec)", prior_logsigma_min, prior_logsigma_max,
+                      pars_bf[idx_sigma], q_ls)
+
+        # 5. Sigma (arcsec)
+        b_sigma_samples = 10.0**res.samples[:, idx_sigma]
+        q_bsigma = get_quantiles(b_sigma_samples)
+        add_table_row(f"{blob_label} Sigma", "arcsec", prior_sigma_range[0], prior_sigma_range[1],
+                      10.0**pars_bf[idx_sigma], q_bsigma)
+
+        # 6. FWHM (arcsec)
+        b_fwhm_samples = FWHM_FACTOR * b_sigma_samples
+        q_bfwhm = get_quantiles(b_fwhm_samples)
+        add_table_row(f"{blob_label} FWHM", "arcsec", FWHM_FACTOR * prior_sigma_range[0], FWHM_FACTOR * prior_sigma_range[1],
+                      FWHM_FACTOR * 10.0**pars_bf[idx_sigma], q_bfwhm)
+
+    # 2. Model-Specific Blob Components
+    if fittype == 'twod_gauss1blob':
+        add_blob_component("B1", 7, 8,
+                           pt_stream.GAUSS1BLOB_PRIOR_RANGES[7],
+                           pt_stream.GAUSS1BLOB_USER_PRIORS[0],
+                           pt_stream.GAUSS1BLOB_USER_PRIORS[1])
+        q_dist = get_quantiles(res.samples[:, 9])
+        add_table_row("B1 Dist", "arcsec", pt_stream.GAUSS1BLOB_USER_PRIORS[2, 0], pt_stream.GAUSS1BLOB_USER_PRIORS[2, 1],
+                      pars_bf[9], q_dist)
+        q_ang = get_quantiles(res.samples[:, 10])
+        add_table_row("B1 Angle", "degrees", pt_stream.GAUSS1BLOB_USER_PRIORS[3, 0], pt_stream.GAUSS1BLOB_USER_PRIORS[3, 1],
+                      pars_bf[10], q_ang)
+
+    elif fittype == 'twod_gauss1blob_2peak':
+        # Core
+        add_blob_component("B11 (Core)", 7, 8,
+                           pt_stream.GAUSS1BLOB_2PEAK_PRIOR_RANGES[7],
+                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[0],
+                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[1])
+        # Envelope
+        add_blob_component("B12 (Env)", 9, 10,
+                           pt_stream.GAUSS1BLOB_2PEAK_PRIOR_RANGES[9],
+                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[2],
+                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[3])
+        q_dist = get_quantiles(res.samples[:, 11])
+        add_table_row("Dist", "arcsec", pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[4, 0], pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[4, 1],
+                      pars_bf[11], q_dist)
+        q_ang = get_quantiles(res.samples[:, 12])
+        add_table_row("Angle", "degrees", pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[5, 0], pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[5, 1],
+                      pars_bf[12], q_ang)
+
+    elif fittype == 'twod_gauss1blob_2peak_dp':
+        # Peak 1
+        add_blob_component("B11 (Peak 1)", 7, 8,
+                           pt_stream.GAUSS1BLOB_2PEAK_DP_PRIOR_RANGES[7],
+                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[0],
+                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[1])
+        q_d1 = get_quantiles(res.samples[:, 9])
+        add_table_row("Dist 1", "arcsec", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[2, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[2, 1],
+                      pars_bf[9], q_d1)
+        q_a1 = get_quantiles(res.samples[:, 10])
+        add_table_row("Angle 1", "degrees", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[3, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[3, 1],
+                      pars_bf[10], q_a1)
+
+        # Peak 2
+        add_blob_component("B12 (Peak 2)", 11, 12,
+                           pt_stream.GAUSS1BLOB_2PEAK_DP_PRIOR_RANGES[11],
+                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[4],
+                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[5])
+        q_d2 = get_quantiles(res.samples[:, 13])
+        add_table_row("Dist 2", "arcsec", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[6, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[6, 1],
+                      pars_bf[13], q_d2)
+        q_a2 = get_quantiles(res.samples[:, 14])
+        add_table_row("Angle 2", "degrees", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[7, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[7, 1],
+                      pars_bf[14], q_a2)
+
+    elif fittype == 'twod_gauss3blob':
+        for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
+            idx_base = 7 + (k - 1) * 4
+            u_base = (k - 1) * 4
+            add_blob_component(name, idx_base, idx_base + 1,
+                               pt_stream.GAUSS3BLOB_PRIOR_RANGES[idx_base],
+                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base],
+                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 1])
+            q_dist = get_quantiles(res.samples[:, idx_base + 2])
+            add_table_row(f"{name} Dist", "arcsec", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 1],
+                          pars_bf[idx_base + 2], q_dist)
+            q_ang = get_quantiles(res.samples[:, idx_base + 3])
+            add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
+                          pars_bf[idx_base + 3], q_ang)
+
+    elif fittype in ('simgauss', 'twod_simgauss'):
+        add_blob_component("Blob", 0, 1,
+                           pt_stream.SIMGAUSS_PRIOR_RANGES[0],
+                           pt_stream.SIMGAUSS_USER_PRIORS[0],
+                           pt_stream.SIMGAUSS_USER_PRIORS[1])
+        sim_names = ["Dist", "Angle", "PA", "Offset RA", "Offset Dec"]
+        sim_units = ["arcsec", "degrees", "degrees", "arcsec", "arcsec"]
+        for s_idx, (s_name, s_unit) in enumerate(zip(sim_names, sim_units), start=2):
+            q_s = get_quantiles(res.samples[:, s_idx])
+            add_table_row(s_name, s_unit, pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 0], pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 1],
+                          pars_bf[s_idx], q_s)
+
+    # Render Table onto Matplotlib Figure
+    col_labels = [
+        "Parameter",
+        "Unit",
+        "Prior Low",
+        "Prior High",
+        "ML Estimate",
+        "50th (Median)",
+        "16th",
+        "84th"
+    ]
+
+    fig_height = max(8.5, 0.40 * len(table_rows) + 2.5)
+    fig_tab, ax_tab = plt.subplots(figsize=(14, fig_height))
+    ax_tab.axis('off')
+
+    tab = ax_tab.table(
+        cellText=table_rows,
+        colLabels=col_labels,
+        loc='center',
+        cellLoc='center'
+    )
+    tab.auto_set_font_size(False)
+    tab.set_fontsize(10)
+    tab.scale(1.05, 1.4)
+
+    # Style header row with light gray background
+    for col_idx in range(len(col_labels)):
+        cell = tab[0, col_idx]
+        cell.set_facecolor('#d9d9d9')
+        cell.set_text_props(weight='bold')
+
+    # Alternate row colors for enhanced readability
+    for row_idx in range(1, len(table_rows) + 1):
+        bg_color = '#f5f5f5' if row_idx % 2 == 0 else '#ffffff'
+        for col_idx in range(len(col_labels)):
+            tab[row_idx, col_idx].set_facecolor(bg_color)
+
+    fig_tab.suptitle(f"Dynesty Posterior Summary & Derived Parameters: {fittype}", fontsize=16, y=0.98)
+    fig_tab.tight_layout()
+    pp.savefig(fig_tab, bbox_inches='tight')
+    plt.close(fig_tab)
+    logging.info('Successfully saved final summary table page to PDF...')
 
 def circular_mean_and_dispersion(samples, weights, period=360.0):
     """
@@ -248,7 +533,35 @@ def main():
     # --------------------------------------------------------------------------
     # 2. Dynesty Run Summary & Corner Plots
     # --------------------------------------------------------------------------
-    fig, axes = dyplot.runplot(res)
+    try:
+        fig, axes = dyplot.runplot(res, logplot=True)
+    except Exception:
+        fig, axes = dyplot.runplot(res)
+
+    # Adjust Panel 4 y-limits so evidence shows: flat baseline -> climb -> flat plateau
+    try:
+        ax_ev = axes.flatten()[3]
+        valid_logz = res.logz[np.isfinite(res.logz)]
+        if len(valid_logz) > 0:
+            final_logz = valid_logz[-1]
+            final_err = res.logzerr[-1] if (hasattr(res, 'logzerr') and len(res.logzerr) > 0 and np.isfinite(res.logzerr[-1])) else 0.5
+            ymax = final_logz + max(3.0 * final_err, 0.5)
+
+            # Determine stable prior baseline, skipping initial 1% transient points
+            n_pts = len(valid_logz)
+            i0 = min(max(int(0.01 * n_pts), 5), n_pts // 4)
+            stable_min = np.min(valid_logz[i0:])
+            total_drop = final_logz - stable_min
+
+            if total_drop > 0.5:
+                ymin = stable_min - 0.05 * total_drop
+            else:
+                ymin = final_logz - 5.0
+
+            ax_ev.set_ylim(ymin, ymax)
+    except Exception as e:
+        logging.warning(f"Could not adjust runplot evidence y-limits: {e}")
+
     fig.tight_layout()
     pp.savefig(fig)
     plt.close(fig)
@@ -315,87 +628,39 @@ def main():
     logging.info('Residual visibilities calculated...')
 
     # --------------------------------------------------------------------------
-    # 3b. Visibility-Domain Residual Diagnostics (P2 Action Item)
+    # 3b. Visibility-Domain uvplot Diagnostic
     # --------------------------------------------------------------------------
-    uvdist_x = np.hypot(u_datx, v_datx)
     chi2_vis_x = np.sum(w_datx * (np.real(resid_visx)**2 + np.imag(resid_visx)**2))
     dof_x = 2 * len(vis_datx) - ndim
     red_chi2_x = chi2_vis_x / dof_x
     logging.info(f"Visibility-domain XX fit: chi2 = {chi2_vis_x:.2e}, dof = {dof_x}, reduced chi2 = {red_chi2_x:.4f}")
 
-    # Bin complex visibilities radially vs UV distance
-    nbins = 30
-    bins = np.linspace(np.min(uvdist_x), np.max(uvdist_x), nbins + 1)
-    bin_centers = 0.5 * (bins[:-1] + bins[1:])
-    bin_indices = np.digitize(uvdist_x, bins) - 1
+    logging.info('Generating visibility radial profile via uvplot...')
+    try:
+        uv_data = UVTable(
+            uvtable=[u_datx, v_datx, Re_datx, Im_datx, w_datx],
+            columns=['u', 'v', 'Re', 'Im', 'weights']
+        )
+        uv_mod = UVTable(
+            uvtable=[u_datx, v_datx, np.real(model), np.imag(model), w_datx],
+            columns=['u', 'v', 'Re', 'Im', 'weights']
+        )
+        uvdist_max = np.max(np.hypot(u_datx, v_datx))
+        uvbin_size = uvdist_max / 40.0
 
-    dat_re_binned = np.zeros(nbins)
-    dat_re_err = np.zeros(nbins)
-    mod_re_binned = np.zeros(nbins)
-    res_re_binned = np.zeros(nbins)
-    res_re_err = np.zeros(nbins)
-    res_im_binned = np.zeros(nbins)
-    res_im_err = np.zeros(nbins)
+        axes_uv = uv_data.plot(color='black', linestyle='.', label='Observed Data (XX)', uvbin_size=uvbin_size)
+        uv_mod.plot(color='crimson', linestyle='-', label='Model Best Fit', axes=list(axes_uv), uvbin_size=uvbin_size, yerr=False)
 
-    for b in range(nbins):
-        idx = (bin_indices == b)
-        if np.any(idx):
-            w_bin = w_datx[idx]
-            sum_w = np.sum(w_bin)
-            dat_re_binned[b] = np.sum(w_bin * np.real(vis_datx[idx])) / sum_w
-            dat_re_err[b] = 1.0 / np.sqrt(sum_w)
-            mod_re_binned[b] = np.sum(w_bin * np.real(model[idx])) / sum_w
-            res_re_binned[b] = np.sum(w_bin * np.real(resid_visx[idx])) / sum_w
-            res_re_err[b] = 1.0 / np.sqrt(sum_w)
-            res_im_binned[b] = np.sum(w_bin * np.imag(resid_visx[idx])) / sum_w
-            res_im_err[b] = 1.0 / np.sqrt(sum_w)
-
-    valid_bins = (dat_re_err > 0)
-
-    # Plot Visibility Diagnostics Figure
-    fig_vis, (ax_v1, ax_v2, ax_v3) = plt.subplots(3, 1, figsize=(10, 12), sharex=False)
-
-    # Panel 1: Real visibilities vs UV distance (klambda)
-    uv_klambda = bin_centers[valid_bins] / 1e3
-    ax_v1.errorbar(uv_klambda, dat_re_binned[valid_bins] * 1e3, yerr=dat_re_err[valid_bins] * 1e3,
-                   fmt='o', color='black', label='Observed Data (XX)', alpha=0.7, markersize=4)
-    ax_v1.plot(uv_klambda, mod_re_binned[valid_bins] * 1e3, color='crimson', lw=2, label='Model Best Fit')
-    ax_v1.set_ylabel('Real Visibility [mJy]')
-    ax_v1.set_title(f'Visibility-Domain Diagnostic: {fittype} (reduced $\\chi^2 = {red_chi2_x:.2f}$)')
-    ax_v1.legend(loc='upper right')
-    ax_v1.grid(True, linestyle=':', alpha=0.6)
-
-    # Panel 2: Complex residuals vs UV distance
-    ax_v2.errorbar(uv_klambda, res_re_binned[valid_bins] * 1e3, yerr=res_re_err[valid_bins] * 1e3,
-                   fmt='s', color='dodgerblue', label='Real Residual', alpha=0.7, markersize=4)
-    ax_v2.errorbar(uv_klambda, res_im_binned[valid_bins] * 1e3, yerr=res_im_err[valid_bins] * 1e3,
-                   fmt='^', color='orange', label='Imag Residual', alpha=0.7, markersize=4)
-    ax_v2.axhline(0, color='gray', linestyle='--')
-    ax_v2.set_xlabel(r'UV Distance [$k\lambda$]')
-    ax_v2.set_ylabel('Residual Visibility [mJy]')
-    ax_v2.legend(loc='upper right')
-    ax_v2.grid(True, linestyle=':', alpha=0.6)
-
-    # Panel 3: Standardized residuals histogram vs standard normal N(0, 1)
-    sub_sample_size = min(len(resid_visx), 200000)
-    sub_idx = np.random.choice(len(resid_visx), size=sub_sample_size, replace=False)
-    norm_res_re = np.real(resid_visx[sub_idx]) * np.sqrt(w_datx[sub_idx])
-    norm_res_im = np.imag(resid_visx[sub_idx]) * np.sqrt(w_datx[sub_idx])
-    norm_res = np.concatenate([norm_res_re, norm_res_im])
-
-    ax_v3.hist(norm_res, bins=100, range=(-5, 5), density=True,
-               alpha=0.6, color='steelblue', label=r'Residuals $(V_{\rm res} \cdot \sqrt{w})$')
-    x_gauss = np.linspace(-5, 5, 200)
-    ax_v3.plot(x_gauss, np.exp(-0.5 * x_gauss**2) / np.sqrt(2 * np.pi), 'r-', lw=2, label=r'Standard Normal $\mathcal{N}(0, 1)$')
-    ax_v3.set_xlabel(r'Standardized Residual ($\sigma$)')
-    ax_v3.set_ylabel('Probability Density')
-    ax_v3.legend(loc='upper right')
-    ax_v3.grid(True, linestyle=':', alpha=0.6)
-
-    fig_vis.tight_layout()
-    pp.savefig(fig_vis)
-    plt.close(fig_vis)
-    logging.info('Successfully saved visibility-domain diagnostics plot...')
+        fig_uv = axes_uv[0].figure
+        axes_uv[0].set_title(f'UVPlot Visibility Radial Profile: {fittype} (reduced $\\chi^2 = {red_chi2_x:.2f}$)')
+        axes_uv[0].legend(loc='upper right')
+        axes_uv[1].legend(loc='upper right')
+        fig_uv.tight_layout()
+        pp.savefig(fig_uv)
+        plt.close(fig_uv)
+        logging.info('Successfully saved uvplot visibility diagnostics plot...')
+    except Exception as e:
+        logging.warning(f"Could not generate uvplot diagnostic: {e}")
 
     # --------------------------------------------------------------------------
     # 4. Implant Residual Visibilities into CASA Measurement Sets
@@ -520,6 +785,7 @@ def main():
     data_plot /= 1e6
     resid_plot /= 1e6
     ring_model /= 1e6
+    ring_model_intrinsic_mjy = ring_model_intrinsic / 1e6
 
     # --- Figure 1: Side-by-Side Comparison (Data, Model, Residuals) ---
     fig = plt.figure(figsize=(24, 8))
@@ -541,6 +807,7 @@ def main():
 
     axes = [ax1, ax2, ax3]
     for ax in axes:
+        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
         if ax != ax1:
             ax.set_ylabel(r'', size=0)
             ax.coords[1].set_ticklabel(size=0)
@@ -553,7 +820,8 @@ def main():
 
     fig.suptitle("93 GHz Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
     fig.subplots_adjust(hspace=0.1, wspace=0.1)
-    pp.savefig()
+    pp.savefig(fig)
+    plt.close(fig)
 
     # --- Figure 2: Comparison with Model Contour Overlays ---
     fig = plt.figure(figsize=(24, 8))
@@ -573,8 +841,10 @@ def main():
     ax3.text(5, 5, 'Dirty Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
 
+    axes = [ax1, ax2, ax3]
     for ax in axes:
         ax.set_autoscale_on(False)
+        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
 
     peak_flux = np.percentile(data_plot, 99.95)
 
@@ -596,7 +866,8 @@ def main():
 
     fig.suptitle("93 GHz Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
     fig.subplots_adjust(hspace=0.1, wspace=0.1)
-    pp.savefig()
+    pp.savefig(fig)
+    plt.close(fig)
 
     # --- Figure 3: Comparison with Reference Cluster Positions ---
     fig = plt.figure(figsize=(24, 8))
@@ -615,6 +886,10 @@ def main():
     im3 = ax3.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
     ax3.text(5, 5, 'Dirty Residual Visibilities', color='black', fontsize=16)
     cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
+
+    axes = [ax1, ax2, ax3]
+    for ax in axes:
+        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
 
     ymc_ids = [15, 6, 18]
     sun_coords = sun_radec(ymc_ids)
@@ -641,7 +916,8 @@ def main():
 
     fig.suptitle("93 GHz Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
     fig.subplots_adjust(hspace=0.1, wspace=0.1)
-    pp.savefig()
+    pp.savefig(fig)
+    plt.close(fig)
 
     # Save FITS products with full WCS information
     header_data = data_wcs.to_header()
@@ -665,11 +941,13 @@ def main():
 
         cutout_data = Cutout2D(data_plot, blob_coord, blob_box_size, wcs=data_wcs)
         cutout_mod = Cutout2D(ring_model, blob_coord, blob_box_size, wcs=mod_wcs)
+        cutout_mod_int = Cutout2D(ring_model_intrinsic_mjy, blob_coord, blob_box_size, wcs=mod_wcs)
         cutout_res = Cutout2D(resid_plot, blob_coord, blob_box_size, wcs=data_wcs)
 
         cutouts = [
             ('Observed CLEAN Image', cutout_data),
-            ('Model Sky Intensity', cutout_mod),
+            ('Model Sky Intensity (Beam Convolved)', cutout_mod),
+            ('Intrinsic Sky Model (Unconvolved)', cutout_mod_int),
             ('Dirty Residual Visibilities', cutout_res)
         ]
 
@@ -688,22 +966,21 @@ def main():
             cx = int(round(float(cx_f)))
             cy = int(round(float(cy_f)))
 
-            # Bounds clamping to prevent IndexError and ensure 3-pixel slice stays within cutout
             ny_cut, nx_cut = cut_data.shape
-            cy_clamp = int(np.clip(cy, 1, ny_cut - 2))
-            cx_clamp = int(np.clip(cx, 1, nx_cut - 2))
 
-            # 1D RA brightness profile
-            ra_profile = np.mean(cut_data[cy_clamp - 1 : cy_clamp + 2, :], axis=0)
+            # 1D RA brightness profile (horizontal slice across all X at Y=cy)
+            ra_profile = np.mean(cut_data[cy - 1 : cy + 2, :], axis=0)
             x_indices = np.arange(nx_cut)
-            pixel_world_ra = cut_wcs.pixel_to_world(x_indices, np.full(nx_cut, cy_clamp))
-            ra_coords = pixel_world_ra.ra.deg
+            pixel_world_ra = cut_wcs.pixel_to_world(x_indices, np.full(nx_cut, cy))
+            # Relative RA offset in arcseconds centered on Gaussian center b_ra
+            ra_offsets_arcsec = (pixel_world_ra.ra.deg - b_ra) * np.cos(np.radians(b_dec)) * 3600.0
 
-            # 1D Dec brightness profile
-            dec_profile = np.mean(cut_data[:, cx_clamp - 1 : cx_clamp + 2], axis=1)
+            # 1D Dec brightness profile (vertical slice across all Y at X=cx)
+            dec_profile = np.mean(cut_data[:, cx - 1 : cx + 2], axis=1)
             y_indices = np.arange(ny_cut)
-            pixel_world_dec = cut_wcs.pixel_to_world(np.full(ny_cut, cx_clamp), y_indices)
-            dec_coords = pixel_world_dec.dec.deg
+            pixel_world_dec = cut_wcs.pixel_to_world(np.full(ny_cut, cx), y_indices)
+            # Relative Dec offset in arcseconds centered on Gaussian center b_dec
+            dec_offsets_arcsec = (pixel_world_dec.dec.deg - b_dec) * 3600.0
 
             # --- Layout: Left panel = 2D Zoomed Cutout; Right panels = 1D RA & Dec Profiles ---
             fig = plt.figure(figsize=(24, 8))
@@ -714,55 +991,56 @@ def main():
             cbar_zoom = plt.colorbar(mappable=im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
             cbar_zoom.set_label(r'Specific Intensity (MJy/sr)', size=16)
 
+            # Restoring beam patch
+            safe_add_beam(ax_img, header=hdr_data, frame=False, color='white', corner='bottom left')
+
             # Central blob coordinate marker
             ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='cyan', marker='+', s=150, linewidth=2)
 
             # Slice indicators
-            ax_img.axhline(cy_clamp - 1.5, color='crimson', linestyle=':', linewidth=1.5)
-            ax_img.axhline(cy_clamp + 1.5, color='crimson', linestyle=':', linewidth=1.5)
-            ax_img.axvline(cx_clamp - 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
-            ax_img.axvline(cx_clamp + 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
+            ax_img.axhline(cy - 1.5, color='crimson', linestyle=':', linewidth=1.5)
+            ax_img.axhline(cy + 1.5, color='crimson', linestyle=':', linewidth=1.5)
+            ax_img.axvline(cx - 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
+            ax_img.axvline(cx + 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
 
             ax_img.set_xlabel(r"Right Ascension (J2000)", size=20)
             ax_img.set_ylabel(r"Declination (J2000)", size=20, labelpad=1)
 
             # Panel 2: 1D RA Profile
             ax_ra = plt.subplot(132)
-            ax_ra.plot(ra_coords, ra_profile, color='crimson', lw=2.5)
-            ax_ra.axvline(b_ra, color='gray', linestyle='--', alpha=0.7)
-            ax_ra.set_xlim(ra_coords[0], ra_coords[-1])
+            ax_ra.plot(ra_offsets_arcsec, ra_profile, color='crimson', lw=2.5)
+            ax_ra.axvline(0.0, color='gray', linestyle='--', alpha=0.7)
+            ax_ra.set_xlim(ra_offsets_arcsec[0], ra_offsets_arcsec[-1])
             ax_ra.set_ylim(ylim_min, ylim_max)
-            ax_ra.set_xlabel(r"Right Ascension (deg)", size=20)
+            ax_ra.set_xlabel(r"$\Delta$RA Offset (arcsec)", size=20)
             ax_ra.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
             ax_ra.set_title(r"1D RA Profile ($\pm 1$ Dec pixel avg)", size=18)
             ax_ra.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
-            formatter_ra = ticker.ScalarFormatter(useOffset=False)
-            formatter_ra.set_scientific(False)
-            ax_ra.xaxis.set_major_formatter(formatter_ra)
-            plt.setp(ax_ra.get_xticklabels(), rotation=20, ha='right')
             ax_ra.grid(True, alpha=0.3, linestyle=':')
 
             # Panel 3: 1D Dec Profile
             ax_dec = plt.subplot(133)
-            ax_dec.plot(dec_coords, dec_profile, color='dodgerblue', lw=2.5)
-            ax_dec.axvline(b_dec, color='gray', linestyle='--', alpha=0.7)
-            ax_dec.set_xlim(dec_coords[0], dec_coords[-1])
+            ax_dec.plot(dec_offsets_arcsec, dec_profile, color='dodgerblue', lw=2.5)
+            ax_dec.axvline(0.0, color='gray', linestyle='--', alpha=0.7)
+            ax_dec.set_xlim(dec_offsets_arcsec[0], dec_offsets_arcsec[-1])
             ax_dec.set_ylim(ylim_min, ylim_max)
-            ax_dec.set_xlabel(r"Declination (deg)", size=20)
+            ax_dec.set_xlabel(r"$\Delta$Dec Offset (arcsec)", size=20)
             ax_dec.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
             ax_dec.set_title(r"1D Dec Profile ($\pm 1$ RA pixel avg)", size=18)
             ax_dec.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
-            formatter_dec = ticker.ScalarFormatter(useOffset=False)
-            formatter_dec.set_scientific(False)
-            ax_dec.xaxis.set_major_formatter(formatter_dec)
-            plt.setp(ax_dec.get_xticklabels(), rotation=20, ha='right')
             ax_dec.grid(True, alpha=0.3, linestyle=':')
 
             blob_label = f"Peak {b_idx + 1}" if "2peak" in fittype else (f"Blob {b_idx + 1}" if len(dynest_coords) > 1 else "Blob")
             fig.suptitle(f"{target_name} - {blob_label} Zoom ($2'' \\times 2''$)", size=26)
             fig.subplots_adjust(hspace=0.2, wspace=0.28, bottom=0.15)
-            pp.savefig()
+            pp.savefig(fig)
             plt.close(fig)
+
+    # --------------------------------------------------------------------------
+    # 8. Summary Table of Posterior Estimates and Derived Quantities
+    # --------------------------------------------------------------------------
+    logging.info('Rendering summary table page to PDF...')
+    render_summary_table_page(res, pars_bf, weights, fittype, pp)
 
     pp.close()
     logging.info('Post-processing and figure generation finished successfully!')

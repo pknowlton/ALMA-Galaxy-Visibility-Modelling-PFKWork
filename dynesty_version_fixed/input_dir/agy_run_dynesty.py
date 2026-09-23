@@ -51,7 +51,7 @@ from dynesty import DynamicNestedSampler
 
 from galario.double import get_image_size
 from model_prof import model_prof, model_addon
-import prior_tform
+import prior_tform_streamline as prior_tform
 
 # Module-level variable to store visibility data, avoiding inter-process serialization overhead
 GLOBAL_DATA = None
@@ -179,7 +179,7 @@ def main():
     try:
         prior_transform = getattr(prior_tform, f"{fittype}_ptform")
     except AttributeError:
-        msg = f"No prior function '{fittype}_ptform' found in prior_tform.py, please check spelling or add function."
+        msg = f"No prior function '{fittype}_ptform' found in prior_tform_streamline.py, please check spelling or add function."
         logging.warning(msg)
         raise ValueError(msg)
 
