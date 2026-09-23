@@ -435,7 +435,8 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         for col_idx in range(len(col_labels)):
             tab[row_idx, col_idx].set_facecolor(bg_color)
 
-    fig_tab.suptitle(f"Dynesty Posterior Summary & Derived Parameters: {fittype}", fontsize=16, y=0.98)
+    clean_fittype = fittype.replace('_', r'\_')
+    fig_tab.suptitle(f"Dynesty Posterior Summary and Derived Parameters: {clean_fittype}", fontsize=16, y=0.98)
     fig_tab.tight_layout()
     pp.savefig(fig_tab, bbox_inches='tight')
     plt.close(fig_tab)
@@ -652,7 +653,8 @@ def main():
         uv_mod.plot(color='crimson', linestyle='-', label='Model Best Fit', axes=list(axes_uv), uvbin_size=uvbin_size, yerr=False)
 
         fig_uv = axes_uv[0].figure
-        axes_uv[0].set_title(f'UVPlot Visibility Radial Profile: {fittype} (reduced $\\chi^2 = {red_chi2_x:.2f}$)')
+        clean_fittype = fittype.replace('_', r'\_')
+        axes_uv[0].set_title(f'UVPlot Visibility Radial Profile: {clean_fittype} (reduced $\\chi^2 = {red_chi2_x:.2f}$)')
         axes_uv[0].legend(loc='upper right')
         axes_uv[1].legend(loc='upper right')
         fig_uv.tight_layout()
