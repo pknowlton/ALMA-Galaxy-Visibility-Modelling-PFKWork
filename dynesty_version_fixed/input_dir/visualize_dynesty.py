@@ -1084,7 +1084,7 @@ def main():
                             color='white', linestyle='--', linewidth=1.5, zorder=12)
 
             # Central blob coordinate marker
-            ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='cyan', marker='+', s=150, linewidth=2, zorder=15)
+            ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='blue', marker='x', s=150, linewidth=2, zorder=15)
 
             # Slice indicators
             ax_img.axhline(cy - 1.5, color='crimson', linestyle=':', linewidth=1.5)
