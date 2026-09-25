@@ -408,6 +408,21 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         add_table_row("Angle 2", "degrees", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[7, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[7, 1],
                       pars_bf[14], q_a2)
 
+    elif fittype == 'twod_gauss2blob':
+        for k, name in [(1, 'B1'), (2, 'B2')]:
+            idx_base = 7 + (k - 1) * 4
+            u_base = (k - 1) * 4
+            add_blob_component(name, idx_base, idx_base + 1,
+                               pt_stream.GAUSS2BLOB_PRIOR_RANGES[idx_base],
+                               pt_stream.GAUSS2BLOB_USER_PRIORS[u_base],
+                               pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 1])
+            q_dist = get_quantiles(res.samples[:, idx_base + 2])
+            add_table_row(f"{name} Dist", "arcsec", pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 2, 0], pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 2, 1],
+                          pars_bf[idx_base + 2], q_dist)
+            q_ang = get_quantiles(res.samples[:, idx_base + 3])
+            add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 3, 1],
+                          pars_bf[idx_base + 3], q_ang)
+
     elif fittype == 'twod_gauss3blob':
         for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
             idx_base = 7 + (k - 1) * 4
@@ -813,6 +828,29 @@ def main():
     phase_center = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
     mod_wcs = make_model_wcs(phase_center.ra.deg, phase_center.dec.deg, pixarcsec, shape=(numpix, numpix))
 
+    # Pre-calculate celestial coordinates for the ring peak profile (white dashed ellipse)
+    has_ring = fittype not in ('simgauss', 'twod_simgauss')
+    if has_ring:
+        ring_rad = pars_bf[2]
+        inc = np.radians(pars_bf[3])
+        pa = np.radians(pars_bf[4])
+        dRA = pars_bf[5]
+        dDec = pars_bf[6]
+
+        theta_ellipse = np.linspace(0, 2 * np.pi, 500)
+        x_pa = ring_rad * np.cos(inc) * np.sin(theta_ellipse)
+        y_pa = ring_rad * np.cos(theta_ellipse)
+
+        x_shifted = x_pa * np.cos(pa) + y_pa * np.sin(pa)
+        y_shifted = -x_pa * np.sin(pa) + y_pa * np.cos(pa)
+
+        ngc3351_center = phase_center.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        ellipse_sky = ngc3351_center.spherical_offsets_by(x_shifted * u.arcsec, y_shifted * u.arcsec)
+        ellipse_ra = ellipse_sky.ra.deg
+        ellipse_dec = ellipse_sky.dec.deg
+    else:
+        ellipse_ra, ellipse_dec = None, None
+
     # Convert surface brightness from Jy/sr to MJy/sr
     data_plot /= 1e6
     resid_plot /= 1e6
@@ -922,9 +960,14 @@ def main():
     dynest_ra, dynest_dec = zip(*dynest_coords)
 
     for ax in axes:
-        ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2, label='Sun et al. (2024)')
-        ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2, label='Fitted Model')
-        ax.scatter(phase_center.ra.deg, phase_center.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='+', s=120, linewidth=2, label='Phase Center')
+        ax.set_autoscale_on(False)
+        # Plot ring peak profile as white dashed ellipse underneath the scatter markers
+        if has_ring and ellipse_ra is not None:
+            ax.plot(ellipse_ra, ellipse_dec, transform=ax.get_transform('world'),
+                    color='white', linestyle='--', linewidth=1.5, zorder=12, label='Ring Ridge Peak')
+        ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2, zorder=15, label='Sun et al. (2024)')
+        ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2, zorder=15, label='Fitted Model')
+        ax.scatter(phase_center.ra.deg, phase_center.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='+', s=120, linewidth=2, zorder=15, label='Phase Center')
 
     for ax in axes:
         if ax != ax1:
@@ -1034,8 +1077,14 @@ def main():
             # Restoring beam patch
             safe_add_beam(ax_img, header=hdr_data, frame=False, color='white', corner='bottom left')
 
+            # Overlay ring peak profile ellipse if ring model is present
+            ax_img.set_autoscale_on(False)
+            if has_ring and ellipse_ra is not None:
+                ax_img.plot(ellipse_ra, ellipse_dec, transform=ax_img.get_transform('world'),
+                            color='white', linestyle='--', linewidth=1.5, zorder=12)
+
             # Central blob coordinate marker
-            ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='cyan', marker='+', s=150, linewidth=2)
+            ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='cyan', marker='+', s=150, linewidth=2, zorder=15)
 
             # Slice indicators
             ax_img.axhline(cy - 1.5, color='crimson', linestyle=':', linewidth=1.5)

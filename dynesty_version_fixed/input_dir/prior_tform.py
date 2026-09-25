@@ -117,12 +117,12 @@ def twod_gauss1blob_ptform(u):
     high_ring = RING_PRIOR_RANGES[:, 1]
     v[:7] = low_ring + u[:7] * (high_ring - low_ring)
 
-    # Blob 1: LogFlux in [-5.5, -3.0], LogSigma in [-1.301, 0.0] (0.05" to 1.0")
+    # Blob 1: LogFlux in [-5.5, -3.0], LogSigma in [-1.301, -0.398] (0.05" to 0.4")
     v[7] = -5.5 + u[7] * (-3.0 - (-5.5))
     v[8] = -1.301 + u[8] * (-0.398 - (-1.301))
     # Distance: uniform area density on disk in [4.0, 10.0] arcsec (Audit P1 Item 2)
     v[9] = uniform_area_radius(u[9], 4.0, 10.0)
-    # Angle: South cluster region [150, 210] deg
+    # Angle: North cluster region [330.0, 390.0] deg
     v[10] = 330.0 + u[10] * (390.0 - 330.0)
     return v
 
@@ -226,6 +226,47 @@ def twod_gauss1blob_2peak_dp_ptform(u):
     return v
 
 #########################
+### 2D Gaussian Ring + 2 Gaussian Blobs (15 parameters)
+#########################
+
+def twod_gauss2blob_ptform(u):
+    """
+    Prior transform for 2D Gaussian Ring + 2 Gaussian Blobs (15 parameters).
+    Reparameterized as log integrated flux + log size (Audit P1 Item 1).
+
+    Parameters
+    ----------
+    u : array_like, shape (15,)
+        Unit hypercube coordinates in [0, 1].
+
+    Returns
+    -------
+    v : numpy.ndarray, shape (15,)
+        Physical model parameters:
+        0-6:   Ring parameters (shared)
+        7-10:  Blob 1 (LogFlux, LogSigma, Dist, Angle) [North clump: 330 to 390 deg]
+        11-14: Blob 2 (LogFlux, LogSigma, Dist, Angle) [South-West clump: 177 to 205 deg]
+    """
+    u = np.asarray(u)
+    v = np.zeros(15, dtype=float)
+    low_ring = RING_PRIOR_RANGES[:, 0]
+    high_ring = RING_PRIOR_RANGES[:, 1]
+    v[:7] = low_ring + u[:7] * (high_ring - low_ring)
+
+    # Blob 1 (North clump)
+    v[7] = -5.5 + u[7] * (-3.0 - (-5.5))
+    v[8] = -1.301 + u[8] * (-0.398 - (-1.301))
+    v[9] = uniform_area_radius(u[9], 4.0, 10.0)
+    v[10] = 330.0 + u[10] * (390.0 - 330.0)
+
+    # Blob 2 (South-West clump)
+    v[11] = -5.5 + u[11] * (-3.0 - (-5.5))
+    v[12] = -1.301 + u[12] * (-0.398 - (-1.301))
+    v[13] = uniform_area_radius(u[13], 4.0, 10.0)
+    v[14] = 177.0 + u[14] * (205.0 - 177.0)
+    return v
+
+#########################
 ### 2D Gaussian Ring + 3 Gaussian Blobs (19 parameters)
 #########################
 
@@ -236,9 +277,9 @@ def twod_gauss3blob_ptform(u):
 
     Assigns distinct, non-overlapping angular regions to Blobs 1, 2, and 3
     under the astronomical counter-clockwise (East of North) convention:
-    - Blob 1: South-East clump (YMC 15 complex, disk angle ~171 deg): Angle in [155, 177] deg.
-    - Blob 2: North clump (YMC 6 complex, disk angle ~348 deg): Angle in [330, 375] deg.
-    - Blob 3: South-West clump (YMC 17/18 complex, disk angle ~182-185 deg): Angle in [177, 205] deg.
+    - Blob 1: North clump (YMC 6 complex, disk angle ~348 deg): Angle in [330, 390] deg.
+    - Blob 2: South-West clump (YMC 17/18 complex, disk angle ~182-185 deg): Angle in [177, 205] deg.
+    - Blob 3: South-East clump (YMC 15 complex, disk angle ~171 deg): Angle in [155, 177] deg.
 
     This deliberate symmetry breaking eliminates unconstrained label switching
     and resolves multimodal posterior degeneracies between the two southern clumps.
@@ -263,23 +304,23 @@ def twod_gauss3blob_ptform(u):
     high_ring = RING_PRIOR_RANGES[:, 1]
     v[:7] = low_ring + u[:7] * (high_ring - low_ring)
 
-    # Blob 1 (YMC 15 complex, South-East)
+    # Blob 1: North clump
     v[7] = -5.5 + u[7] * (-3.0 - (-5.5))
-    v[8] = -1.301 + u[8] * (0.0 - (-1.301))
+    v[8] = -1.301 + u[8] * (-0.398 - (-1.301))
     v[9] = uniform_area_radius(u[9], 4.0, 10.0)
-    v[10] = 155.0 + u[10] * (177.0 - 155.0)
+    v[10] = 330.0 + u[10] * (390.0 - 330.0)
 
-    # Blob 2 (YMC 6 complex, North)
+    # Blob 2: South-West clump
     v[11] = -5.5 + u[11] * (-3.0 - (-5.5))
-    v[12] = -1.301 + u[12] * (0.0 - (-1.301))
+    v[12] = -1.301 + u[12] * (-0.398 - (-1.301))
     v[13] = uniform_area_radius(u[13], 4.0, 10.0)
-    v[14] = 330.0 + u[14] * (375.0 - 330.0)
+    v[14] = 177.0 + u[14] * (205.0 - 177.0)
 
-    # Blob 3 (YMC 17/18 complex, South-West)
+    # Blob 3: South-East clump
     v[15] = -5.5 + u[15] * (-3.0 - (-5.5))
-    v[16] = -1.301 + u[16] * (0.0 - (-1.301))
+    v[16] = -1.301 + u[16] * (-0.398 - (-1.301))
     v[17] = uniform_area_radius(u[17], 4.0, 10.0)
-    v[18] = 177.0 + u[18] * (205.0 - 177.0)
+    v[18] = 155.0 + u[18] * (177.0 - 155.0)
     return v
 
 #########################

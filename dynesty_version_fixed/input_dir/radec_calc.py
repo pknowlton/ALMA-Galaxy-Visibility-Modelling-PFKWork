@@ -56,7 +56,7 @@ def dynest_radec(pars, fittype):
         Best-fit model parameters.
     fittype : str
         Model identifier: 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss1blob_2peak',
-        'twod_gauss1blob_2peak_dp', or 'twod_gauss3blob'.
+        'twod_gauss1blob_2peak_dp', 'twod_gauss2blob', or 'twod_gauss3blob'.
 
     Returns
     -------
@@ -119,6 +119,18 @@ def dynest_radec(pars, fittype):
         radec_b12 = radec_b11.directional_offset_by(position_angle=sky_ang_b12, separation=sep_b12)
         dynest_coords[1, 0] = radec_b12.ra.deg
         dynest_coords[1, 1] = radec_b12.dec.deg
+
+    elif fittype == 'twod_gauss2blob':
+        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2 = pars
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        dynest_coords = np.zeros((2, 2))
+
+        for idx, (dist_b, ang_b) in enumerate([(dist_b1, ang_b1), (dist_b2, ang_b2)]):
+            sky_ang = (posangle + ang_b) * u.deg
+            sep = dist_b * u.arcsecond
+            radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
+            dynest_coords[idx, 0] = radec.ra.deg
+            dynest_coords[idx, 1] = radec.dec.deg
 
     elif fittype == 'twod_gauss3blob':
         log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars

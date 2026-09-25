@@ -16,7 +16,7 @@
 #   $3 - DATA_PATH: Absolute path to the calibrated UV visibility table (ASCII format).
 #   $4 - FITTYPE:   Model identifier defining the geometry (e.g., 'twod_gaussring',
 #                   'twod_gauss1blob', 'twod_gauss1blob_2peak', 'twod_gauss1blob_2peak_dp',
-#                   'twod_gauss3blob', 'simgauss').
+#                   'twod_gauss2blob', 'twod_gauss3blob', 'simgauss').
 #
 # Environment:
 #   Requires the 'pk_env_38' Conda environment (Python <= 3.8) containing Galario,

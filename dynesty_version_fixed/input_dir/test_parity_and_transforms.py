@@ -44,6 +44,7 @@ from prior_tform import (
     twod_gauss1blob_ptform,
     twod_gauss1blob_2peak_ptform,
     twod_gauss1blob_2peak_dp_ptform,
+    twod_gauss2blob_ptform,
     twod_gauss3blob_ptform,
     simgauss_ptform
 )
@@ -306,12 +307,14 @@ class TestPriorConsistency(unittest.TestCase):
         p_1blob = twod_gauss1blob_ptform(unit_cube_mid[:11])
         p_2peak = twod_gauss1blob_2peak_ptform(unit_cube_mid[:13])
         p_dp = twod_gauss1blob_2peak_dp_ptform(unit_cube_mid[:15])
+        p_2blob = twod_gauss2blob_ptform(unit_cube_mid[:15])
         p_3blob = twod_gauss3blob_ptform(unit_cube_mid[:19])
 
         # First 7 parameters must be identical across ALL models
         np.testing.assert_allclose(p_ring[:7], p_1blob[:7], err_msg="twod_gauss1blob differs in shared ring priors!")
         np.testing.assert_allclose(p_ring[:7], p_2peak[:7], err_msg="twod_gauss1blob_2peak differs in shared ring priors!")
         np.testing.assert_allclose(p_ring[:7], p_dp[:7], err_msg="twod_gauss1blob_2peak_dp differs in shared ring priors!")
+        np.testing.assert_allclose(p_ring[:7], p_2blob[:7], err_msg="twod_gauss2blob differs in shared ring priors!")
         np.testing.assert_allclose(p_ring[:7], p_3blob[:7], err_msg="twod_gauss3blob differs in shared ring priors!")
 
     def test_positive_sigma_bounds(self):
@@ -325,6 +328,7 @@ class TestPriorConsistency(unittest.TestCase):
             (twod_gauss1blob_ptform, 11),
             (twod_gauss1blob_2peak_ptform, 13),
             (twod_gauss1blob_2peak_dp_ptform, 15),
+            (twod_gauss2blob_ptform, 15),
             (twod_gauss3blob_ptform, 19)
         ]:
             pars_min = ptform(unit_cube_zero[:n])
@@ -345,6 +349,9 @@ class TestPriorConsistency(unittest.TestCase):
         # YMC 6 (North):       CCW disk angle ~348.32 deg
 
         # In twod_gauss3blob:
+        # Blob 1: North [330.0, 390.0]
+        # Blob 2: South-West [177.0, 205.0]
+        # Blob 3: South-East [155.0, 177.0]
         u_0 = np.zeros(19)
         u_1 = np.ones(19)
         p_min = twod_gauss3blob_ptform(u_0)
@@ -354,18 +361,18 @@ class TestPriorConsistency(unittest.TestCase):
         ang2_min, ang2_max = p_min[14], p_max[14]
         ang3_min, ang3_max = p_min[18], p_max[18]
 
-        # 1. Blob 1 and Blob 3 must be completely disjoint (zero overlap)
-        self.assertLessEqual(ang1_max, ang3_min, "Blob 1 and Blob 3 angle ranges must not overlap!")
+        # 1. Blob 2 (SW) and Blob 3 (SE) must be completely disjoint (zero overlap)
+        self.assertLessEqual(ang3_max, ang2_min, "Blob 3 (SE) and Blob 2 (SW) angle ranges must not overlap!")
 
-        # 2. Blob 1 must enclose YMC 15 (~170.85 deg)
-        self.assertTrue(ang1_min <= 170.85 <= ang1_max, f"Blob 1 [{ang1_min}, {ang1_max}] does not enclose YMC 15!")
+        # 2. Blob 1 must enclose YMC 6 (~348.32 deg)
+        self.assertTrue(ang1_min <= 348.32 <= ang1_max, f"Blob 1 [{ang1_min}, {ang1_max}] does not enclose YMC 6!")
 
-        # 3. Blob 2 must enclose YMC 6 (~348.32 deg)
-        self.assertTrue(ang2_min <= 348.32 <= ang2_max, f"Blob 2 [{ang2_min}, {ang2_max}] does not enclose YMC 6!")
+        # 3. Blob 2 must enclose YMC 17 (~182.41 deg) and YMC 18 (~185.17 deg)
+        self.assertTrue(ang2_min <= 182.41 <= ang2_max, f"Blob 2 [{ang2_min}, {ang2_max}] does not enclose YMC 17!")
+        self.assertTrue(ang2_min <= 185.17 <= ang2_max, f"Blob 2 [{ang2_min}, {ang2_max}] does not enclose YMC 18!")
 
-        # 4. Blob 3 must enclose YMC 17 (~182.41 deg) and YMC 18 (~185.17 deg)
-        self.assertTrue(ang3_min <= 182.41 <= ang3_max, f"Blob 3 [{ang3_min}, {ang3_max}] does not enclose YMC 17!")
-        self.assertTrue(ang3_min <= 185.17 <= ang3_max, f"Blob 3 [{ang3_min}, {ang3_max}] does not enclose YMC 18!")
+        # 4. Blob 3 must enclose YMC 15 (~170.85 deg)
+        self.assertTrue(ang3_min <= 170.85 <= ang3_max, f"Blob 3 [{ang3_min}, {ang3_max}] does not enclose YMC 15!")
 
 
 class TestSimgaussModel(unittest.TestCase):
@@ -414,6 +421,20 @@ class TestSimgaussModel(unittest.TestCase):
             self.assertEqual(ndim, 7)
             self.assertEqual(len(labels), 7)
             self.assertEqual(len(units), 7)
+
+    def test_twod_gauss2blob_addon_and_radec(self):
+        labels, units, ndim = model_addon('twod_gauss2blob')
+        self.assertEqual(ndim, 15)
+        self.assertEqual(len(labels), 15)
+        self.assertEqual(len(units), 15)
+
+        # Ring (0-6) + B1 (7-10) + B2 (11-14)
+        pars = np.array([-1.0, -0.5, 6.0, 50.0, 20.0, 0.2, -0.3,
+                         -4.0, -0.8, 6.0, 350.0,
+                         -4.0, -0.8, 6.0, 190.0])
+        coords = dynest_radec(pars, 'twod_gauss2blob')
+        self.assertEqual(coords.shape, (2, 2))
+        self.assertTrue(np.all(np.isfinite(coords)))
 
     def test_dynesty_version_fixed_radec(self):
         pars = np.array([-1.0, 0.0, 6.0, 135.0, 10.0, 0.5, -0.5])
@@ -518,6 +539,7 @@ class TestPriorTformStreamline(unittest.TestCase):
             ("twod_gauss1blob", 11),
             ("twod_gauss1blob_2peak", 13),
             ("twod_gauss1blob_2peak_dp", 15),
+            ("twod_gauss2blob", 15),
             ("twod_gauss3blob", 19),
             ("simgauss", 7)
         ]
@@ -546,11 +568,13 @@ class TestPriorTformStreamline(unittest.TestCase):
         p_1blob = pt_stream.twod_gauss1blob_ptform(u_mid[:11])
         p_2peak = pt_stream.twod_gauss1blob_2peak_ptform(u_mid[:13])
         p_dp = pt_stream.twod_gauss1blob_2peak_dp_ptform(u_mid[:15])
+        p_2blob = pt_stream.twod_gauss2blob_ptform(u_mid[:15])
         p_3blob = pt_stream.twod_gauss3blob_ptform(u_mid[:19])
 
         np.testing.assert_allclose(p_ring[:7], p_1blob[:7])
         np.testing.assert_allclose(p_ring[:7], p_2peak[:7])
         np.testing.assert_allclose(p_ring[:7], p_dp[:7])
+        np.testing.assert_allclose(p_ring[:7], p_2blob[:7])
         np.testing.assert_allclose(p_ring[:7], p_3blob[:7])
 
     def test_custom_user_prior_recompilation(self):
