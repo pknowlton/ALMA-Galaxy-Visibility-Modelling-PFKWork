@@ -71,6 +71,7 @@ cd "${STAGING_DIR}"
 
 pwd
 ls
+ls casa_dir_freq
 
 echo "Starting ADVI run at $(date)"
 
