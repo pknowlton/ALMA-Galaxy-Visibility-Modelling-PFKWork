@@ -14,7 +14,7 @@
 #   $2 - OUT_DIR:   Persistent destination directory for all run outputs.
 #   $3 - NAME:      Run name/label used for tagging resource profiling output files.
 #   $4 - DATA_PATH: Absolute path to the calibrated UV visibility table.
-#   $5 - FITTYPE:   Model geometry identifier ('twod_gaussring' or 'twod_gauss1blob').
+#   $5 - FITTYPE:   Model geometry identifier ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob').
 #
 # Output Products:
 #   - ${NAME}_psrecord.txt: Tabular time series of timestamp, CPU %, and memory (MB).

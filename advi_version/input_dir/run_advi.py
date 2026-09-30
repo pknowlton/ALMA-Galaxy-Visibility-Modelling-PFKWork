@@ -361,8 +361,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run Automatic Differentiation Variational Inference (ADVI) for ALMA visibility modeling."
     )
-    parser.add_argument("fittype", type=str, choices=['twod_gaussring', 'twod_gauss1blob'],
-                        help="Model profile configuration name ('twod_gaussring' or 'twod_gauss1blob').")
+    parser.add_argument("fittype", type=str, choices=['twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob'],
+                        help="Model profile configuration name ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob').")
     parser.add_argument("--eta", type=float, default=0.05,
                         help="Base learning rate / step size for Adam optimizer (default: 0.05).")
     parser.add_argument("--num-iters", type=int, default=1500,

@@ -97,8 +97,30 @@ class TestAdviTransformations(unittest.TestCase):
             np.testing.assert_allclose(theta_rec, theta_orig, rtol=1e-5, atol=1e-7,
                                        err_msg="Roundtrip theta -> zeta -> theta failed for twod_gauss1blob")
 
+    def test_roundtrip_twod_gauss2blob(self):
+        fittype = 'twod_gauss2blob'
+        np.random.seed(42)
+
+        for _ in range(20):
+            theta_orig = sample_prior(fittype)
+            zeta = theta_to_zeta(theta_orig, fittype)
+            theta_rec = zeta_to_theta(zeta, fittype)
+            np.testing.assert_allclose(theta_rec, theta_orig, rtol=1e-5, atol=1e-7,
+                                       err_msg="Roundtrip theta -> zeta -> theta failed for twod_gauss2blob")
+
+    def test_roundtrip_twod_gauss3blob(self):
+        fittype = 'twod_gauss3blob'
+        np.random.seed(42)
+
+        for _ in range(20):
+            theta_orig = sample_prior(fittype)
+            zeta = theta_to_zeta(theta_orig, fittype)
+            theta_rec = zeta_to_theta(zeta, fittype)
+            np.testing.assert_allclose(theta_rec, theta_orig, rtol=1e-5, atol=1e-7,
+                                       err_msg="Roundtrip theta -> zeta -> theta failed for twod_gauss3blob")
+
     def test_grad_zeta_to_theta(self):
-        for fittype in ('twod_gaussring', 'twod_gauss1blob'):
+        for fittype in ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob'):
             _, _, ndim = model_addon(fittype)
             np.random.seed(123)
             zeta = np.random.normal(0.0, 1.0, size=ndim)
@@ -120,7 +142,7 @@ class TestAdviTransformations(unittest.TestCase):
                                        err_msg=f"Analytical dtheta/dzeta mismatch in {fittype}")
 
     def test_grad_log_prior_and_jacobian(self):
-        for fittype in ('twod_gaussring', 'twod_gauss1blob'):
+        for fittype in ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob'):
             _, _, ndim = model_addon(fittype)
             np.random.seed(456)
             zeta = np.random.normal(0.0, 1.5, size=ndim)
@@ -157,9 +179,19 @@ class TestModelProfileMetadata(unittest.TestCase):
         self.assertEqual(len(l11), 11)
         self.assertEqual(len(u11), 11)
 
+        l15, u15, ndim15 = model_addon('twod_gauss2blob')
+        self.assertEqual(ndim15, 15)
+        self.assertEqual(len(l15), 15)
+        self.assertEqual(len(u15), 15)
+
+        l19, u19, ndim19 = model_addon('twod_gauss3blob')
+        self.assertEqual(ndim19, 19)
+        self.assertEqual(len(l19), 19)
+        self.assertEqual(len(u19), 19)
+
     def test_unsupported_models_rejected(self):
         with self.assertRaises(ValueError):
-            model_addon('twod_gauss2blob')
+            model_addon('twod_gauss1blob_2peak')
         with self.assertRaises(ValueError):
             model_addon('simgauss')
 
@@ -219,6 +251,48 @@ class TestAdviOptimization(unittest.TestCase):
         samples, best_fit = fitter.sample_posterior(num_draws=20)
         self.assertEqual(samples.shape, (20, 11))
         self.assertEqual(len(best_fit), 11)
+        self.assertTrue(np.all(np.isfinite(samples)))
+        self.assertTrue(np.all(np.isfinite(best_fit)))
+
+    def test_fit_twod_gauss2blob(self):
+        fitter = AdviVisibilityFitter(
+            fittype='twod_gauss2blob',
+            args=self.args,
+            vis_data=self.vis_data,
+            pool=None,
+            eta=0.05,
+            num_samples=2,
+            tol_rel_obj=0.001,
+            seed=42
+        )
+        fitter.fit(max_iters=5)
+        self.assertEqual(len(fitter.elbo_history), 5)
+        self.assertTrue(np.all(np.isfinite(fitter.elbo_history)))
+
+        samples, best_fit = fitter.sample_posterior(num_draws=20)
+        self.assertEqual(samples.shape, (20, 15))
+        self.assertEqual(len(best_fit), 15)
+        self.assertTrue(np.all(np.isfinite(samples)))
+        self.assertTrue(np.all(np.isfinite(best_fit)))
+
+    def test_fit_twod_gauss3blob(self):
+        fitter = AdviVisibilityFitter(
+            fittype='twod_gauss3blob',
+            args=self.args,
+            vis_data=self.vis_data,
+            pool=None,
+            eta=0.05,
+            num_samples=2,
+            tol_rel_obj=0.001,
+            seed=42
+        )
+        fitter.fit(max_iters=5)
+        self.assertEqual(len(fitter.elbo_history), 5)
+        self.assertTrue(np.all(np.isfinite(fitter.elbo_history)))
+
+        samples, best_fit = fitter.sample_posterior(num_draws=20)
+        self.assertEqual(samples.shape, (20, 19))
+        self.assertEqual(len(best_fit), 19)
         self.assertTrue(np.all(np.isfinite(samples)))
         self.assertTrue(np.all(np.isfinite(best_fit)))
 

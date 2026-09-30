@@ -298,38 +298,91 @@ def render_summary_table_page(samples, pars_bf, fittype, pp):
         add_table_row(p_name, p_unit, prior_advi.COMMON_RING_PRIORS[p_idx, 0], prior_advi.COMMON_RING_PRIORS[p_idx, 1],
                       pars_bf[p_idx], q_p)
 
-    # 2. Blob 1 Component (if twod_gauss1blob)
+    def add_blob_component(blob_label, idx_flux, idx_sigma, prior_logflux_range, prior_peak_log_range, prior_sigma_range):
+        # 1. LogFlux
+        q_lf = get_quantiles(samples[:, idx_flux])
+        add_table_row(f"{blob_label} LogFlux", "log(Jy)", prior_logflux_range[0], prior_logflux_range[1],
+                      pars_bf[idx_flux], q_lf)
+
+        # 2. Flux (Jy)
+        b_flux_samples = 10.0**samples[:, idx_flux]
+        q_bflux = get_quantiles(b_flux_samples)
+        add_table_row(f"{blob_label} Flux", "Jy", 10.0**prior_logflux_range[0], 10.0**prior_logflux_range[1],
+                      10.0**pars_bf[idx_flux], q_bflux)
+
+        # 3. LogPeak (log(Jy/sr))
+        b_area_samples = 2.0 * np.pi * ((10.0**samples[:, idx_sigma] * ARCSEC_TO_RAD)**2)
+        b_peak_samples = b_flux_samples / np.maximum(b_area_samples, 1e-30)
+        b_logpeak_samples = np.log10(np.maximum(b_peak_samples, 1e-30))
+        q_bpeak = get_quantiles(b_logpeak_samples)
+
+        b_area_ml = 2.0 * np.pi * ((10.0**pars_bf[idx_sigma] * ARCSEC_TO_RAD)**2)
+        b_peak_ml = (10.0**pars_bf[idx_flux]) / max(b_area_ml, 1e-30)
+        b_logpeak_ml = np.log10(max(b_peak_ml, 1e-30))
+        add_table_row(f"{blob_label} LogPeak", "log(Jy/sr)", prior_peak_log_range[0], prior_peak_log_range[1],
+                      b_logpeak_ml, q_bpeak)
+
+        # 4. LogSigma
+        prior_logsigma_min = np.log10(prior_sigma_range[0])
+        prior_logsigma_max = np.log10(prior_sigma_range[1])
+        q_ls = get_quantiles(samples[:, idx_sigma])
+        add_table_row(f"{blob_label} LogSigma", "log(arcsec)", prior_logsigma_min, prior_logsigma_max,
+                      pars_bf[idx_sigma], q_ls)
+
+        # 5. Sigma (arcsec)
+        b_sigma_samples = 10.0**samples[:, idx_sigma]
+        q_bsigma = get_quantiles(b_sigma_samples)
+        add_table_row(f"{blob_label} Sigma", "arcsec", prior_sigma_range[0], prior_sigma_range[1],
+                      10.0**pars_bf[idx_sigma], q_bsigma)
+
+        # 6. FWHM (arcsec)
+        b_fwhm_samples = FWHM_FACTOR * b_sigma_samples
+        q_bfwhm = get_quantiles(b_fwhm_samples)
+        add_table_row(f"{blob_label} FWHM", "arcsec", FWHM_FACTOR * prior_sigma_range[0], FWHM_FACTOR * prior_sigma_range[1],
+                      FWHM_FACTOR * 10.0**pars_bf[idx_sigma], q_bfwhm)
+
+    # 2. Model-Specific Blob Components
     if fittype == 'twod_gauss1blob':
-        # LogFlux
-        q_lf = get_quantiles(samples[:, 7])
-        add_table_row("B1 LogFlux", "log(Jy)", prior_advi.GAUSS1BLOB_PRIOR_RANGES[7, 0], prior_advi.GAUSS1BLOB_PRIOR_RANGES[7, 1],
-                      pars_bf[7], q_lf)
-        # Flux (Jy)
-        b_flux = 10.0**samples[:, 7]
-        add_table_row("B1 Flux", "Jy", 10.0**prior_advi.GAUSS1BLOB_PRIOR_RANGES[7, 0], 10.0**prior_advi.GAUSS1BLOB_PRIOR_RANGES[7, 1],
-                      10.0**pars_bf[7], get_quantiles(b_flux))
-        # LogPeak
-        b_area = 2.0 * np.pi * ((10.0**samples[:, 8] * ARCSEC_TO_RAD)**2)
-        b_peak = b_flux / np.maximum(b_area, 1e-30)
-        b_area_ml = 2.0 * np.pi * ((10.0**pars_bf[8] * ARCSEC_TO_RAD)**2)
-        b_peak_ml = (10.0**pars_bf[7]) / max(b_area_ml, 1e-30)
-        add_table_row("B1 LogPeak", "log(Jy/sr)", prior_advi.GAUSS1BLOB_USER_PRIORS[0, 0], prior_advi.GAUSS1BLOB_USER_PRIORS[0, 1],
-                      np.log10(max(b_peak_ml, 1e-30)), get_quantiles(np.log10(np.maximum(b_peak, 1e-30))))
-        # LogSigma
-        add_table_row("B1 LogSigma", "log(arcsec)", prior_advi.GAUSS1BLOB_PRIOR_RANGES[8, 0], prior_advi.GAUSS1BLOB_PRIOR_RANGES[8, 1],
-                      pars_bf[8], get_quantiles(samples[:, 8]))
-        # Sigma
-        b_sig = 10.0**samples[:, 8]
-        add_table_row("B1 Sigma", "arcsec", prior_advi.GAUSS1BLOB_USER_PRIORS[1, 0], prior_advi.GAUSS1BLOB_USER_PRIORS[1, 1],
-                      10.0**pars_bf[8], get_quantiles(b_sig))
-        # FWHM
-        add_table_row("B1 FWHM", "arcsec", FWHM_FACTOR * prior_advi.GAUSS1BLOB_USER_PRIORS[1, 0], FWHM_FACTOR * prior_advi.GAUSS1BLOB_USER_PRIORS[1, 1],
-                      FWHM_FACTOR * 10.0**pars_bf[8], get_quantiles(FWHM_FACTOR * b_sig))
-        # Dist & Angle
+        add_blob_component("B1", 7, 8,
+                           prior_advi.GAUSS1BLOB_PRIOR_RANGES[7],
+                           prior_advi.GAUSS1BLOB_USER_PRIORS[0],
+                           prior_advi.GAUSS1BLOB_USER_PRIORS[1])
+        q_dist = get_quantiles(samples[:, 9])
         add_table_row("B1 Dist", "arcsec", prior_advi.GAUSS1BLOB_USER_PRIORS[2, 0], prior_advi.GAUSS1BLOB_USER_PRIORS[2, 1],
-                      pars_bf[9], get_quantiles(samples[:, 9]))
+                      pars_bf[9], q_dist)
+        q_ang = get_quantiles(samples[:, 10])
         add_table_row("B1 Angle", "degrees", prior_advi.GAUSS1BLOB_USER_PRIORS[3, 0], prior_advi.GAUSS1BLOB_USER_PRIORS[3, 1],
-                      pars_bf[10], get_quantiles(samples[:, 10]))
+                      pars_bf[10], q_ang)
+
+    elif fittype == 'twod_gauss2blob':
+        for k, name in [(1, 'B1'), (2, 'B2')]:
+            idx_base = 7 + (k - 1) * 4
+            u_base = (k - 1) * 4
+            add_blob_component(name, idx_base, idx_base + 1,
+                               prior_advi.GAUSS2BLOB_PRIOR_RANGES[idx_base],
+                               prior_advi.GAUSS2BLOB_USER_PRIORS[u_base],
+                               prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 1])
+            q_dist = get_quantiles(samples[:, idx_base + 2])
+            add_table_row(f"{name} Dist", "arcsec", prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 2, 0], prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 2, 1],
+                          pars_bf[idx_base + 2], q_dist)
+            q_ang = get_quantiles(samples[:, idx_base + 3])
+            add_table_row(f"{name} Angle", "degrees", prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 3, 0], prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 3, 1],
+                          pars_bf[idx_base + 3], q_ang)
+
+    elif fittype == 'twod_gauss3blob':
+        for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
+            idx_base = 7 + (k - 1) * 4
+            u_base = (k - 1) * 4
+            add_blob_component(name, idx_base, idx_base + 1,
+                               prior_advi.GAUSS3BLOB_PRIOR_RANGES[idx_base],
+                               prior_advi.GAUSS3BLOB_USER_PRIORS[u_base],
+                               prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 1])
+            q_dist = get_quantiles(samples[:, idx_base + 2])
+            add_table_row(f"{name} Dist", "arcsec", prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 2, 0], prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 2, 1],
+                          pars_bf[idx_base + 2], q_dist)
+            q_ang = get_quantiles(samples[:, idx_base + 3])
+            add_table_row(f"{name} Angle", "degrees", prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
+                          pars_bf[idx_base + 3], q_ang)
 
     # Render Summary Table Figure
     num_rows = len(table_rows)
@@ -373,8 +426,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Visualize and post-process ADVI fitting results."
     )
-    parser.add_argument("fittype", type=str, choices=['twod_gaussring', 'twod_gauss1blob'],
-                        help="Model configuration identifier ('twod_gaussring' or 'twod_gauss1blob').")
+    parser.add_argument("fittype", type=str, choices=['twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob'],
+                        help="Model configuration identifier ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob').")
     pargs = parser.parse_args()
 
     fittype = pargs.fittype

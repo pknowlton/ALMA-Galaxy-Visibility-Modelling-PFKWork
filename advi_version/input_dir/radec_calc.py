@@ -66,8 +66,32 @@ def advi_radec(pars, fittype):
         coords[0, 0] = radec_b1.ra.deg
         coords[0, 1] = radec_b1.dec.deg
 
+    elif fittype == 'twod_gauss2blob':
+        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2 = pars
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        coords = np.zeros((2, 2))
+
+        for idx, (dist_b, ang_b) in enumerate([(dist_b1, ang_b1), (dist_b2, ang_b2)]):
+            sky_ang = (posangle + ang_b) * u.deg
+            sep = dist_b * u.arcsecond
+            radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
+            coords[idx, 0] = radec.ra.deg
+            coords[idx, 1] = radec.dec.deg
+
+    elif fittype == 'twod_gauss3blob':
+        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars
+        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+        coords = np.zeros((3, 2))
+
+        for idx, (dist_b, ang_b) in enumerate([(dist_b1, ang_b1), (dist_b2, ang_b2), (dist_b3, ang_b3)]):
+            sky_ang = (posangle + ang_b) * u.deg
+            sep = dist_b * u.arcsecond
+            radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
+            coords[idx, 0] = radec.ra.deg
+            coords[idx, 1] = radec.dec.deg
+
     else:
-        msg = f"Invalid fittype '{fittype}', please choose 'twod_gaussring' or 'twod_gauss1blob'."
+        msg = f"Invalid fittype '{fittype}', please choose 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', or 'twod_gauss3blob'."
         logging.warning(msg)
         raise ValueError(msg)
 

@@ -36,8 +36,8 @@ parser.add_argument(
 parser.add_argument(
     "fittype",
     type=str,
-    choices=['twod_gaussring', 'twod_gauss1blob'],
-    help="Model profile configuration name ('twod_gaussring' or 'twod_gauss1blob')."
+    choices=['twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob'],
+    help="Model profile configuration name ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob')."
 )
 pargs = parser.parse_args()
 

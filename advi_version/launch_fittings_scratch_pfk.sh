@@ -15,7 +15,7 @@
 #   $1 - IN_DIR:    Path to directory containing input Python scripts and modules.
 #   $2 - OUT_DIR:   Persistent destination directory for output logs, checkpoints, and plots.
 #   $3 - DATA_PATH: Absolute path to the calibrated UV visibility table (ASCII format).
-#   $4 - FITTYPE:   Model identifier ('twod_gaussring' or 'twod_gauss1blob').
+#   $4 - FITTYPE:   Model identifier ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob').
 #
 # Environment:
 #   Requires the 'pk_env_38' Conda environment (Python <= 3.8) containing Galario,

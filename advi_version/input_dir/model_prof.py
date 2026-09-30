@@ -254,13 +254,226 @@ def twod_gauss1blob(pars, args, vis_data, version):
 
 
 ###############################################################################
+# 3. Model: 2D Gaussian Ring + 2 Gaussian Blobs (15 parameters)
+###############################################################################
+
+def twod_gauss2blob_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, nxy, dxy, version):
+    r"""
+    Generates a 2D image matrix of an inclined Gaussian ring plus 2 distinct Gaussian clusters.
+    """
+    xx, yy = get_grid(nxy, dxy)
+
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    xdot_b2 = dist_b2 * np.sin(ang_b2)
+    ydot_b2 = dist_b2 * np.cos(ang_b2)
+
+    if version in ("chi2", "vis"):
+        xinc = xx / np.cos(inc)
+        radius_vec = np.hypot(xinc, yy)
+
+        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
+        blob2_model_jypix = gaussblob_prof(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
+
+        return ring_model_jypix + blob1_model_jypix + blob2_model_jypix
+
+    elif version == 'plot':
+        xx_shifted = xx - dra
+        yy_shifted = yy - ddec
+
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+
+        xinc = xpa / np.cos(inc)
+        radius_vec = np.hypot(xinc, ypa)
+
+        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1.0)
+        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1.0)
+        blob2_model_jysr = gaussblob_prof(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2, 1.0)
+
+        return ring_model_jysr + blob1_model_jysr + blob2_model_jysr
+
+    else:
+        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
+        logging.warning(msg)
+        raise ValueError(msg)
+
+
+def twod_gauss2blob(pars, args, vis_data, version):
+    r"""
+    Top-level model handler for 2D Gaussian Ring + 2 Gaussian Blobs (15 parameters):
+    pars: [Ring LogFlux, Ring LogSigma, Ring Rad, Inc, PA, Offset RA, Offset Dec,
+           B1 LogFlux, B1 LogSigma, B1 Dist, B1 Angle,
+           B2 LogFlux, B2 LogSigma, B2 Dist, B2 Angle]
+    """
+    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2 = pars
+    nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    inclination *= deg
+    posangle *= deg
+    ang_b1 *= deg
+    ang_b2 *= deg
+
+    sigma_arcsec = 10.0**log_sigma
+    sigma_b1_arcsec = 10.0**log_sigma_b1
+    sigma_b2_arcsec = 10.0**log_sigma_b2
+
+    sigma_rad = sigma_arcsec * arcsec
+    sigma_b1_rad = sigma_b1_arcsec * arcsec
+    sigma_b2_rad = sigma_b2_arcsec * arcsec
+    ring_rad_rad = ring_rad * arcsec
+
+    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
+    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
+    peak_b2 = blob_flux_to_peak(log_flux_b2, sigma_b2_rad)
+
+    if version in ("chi2", "vis"):
+        dRA_rad = dRA * arcsec
+        dDec_rad = dDec * arcsec
+        dist_b1_rad = dist_b1 * arcsec
+        dist_b2_rad = dist_b2 * arcsec
+        model_img = twod_gauss2blob_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle,
+                                          dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad,
+                                          ang_b1, peak_b2, sigma_b2_rad, dist_b2_rad, ang_b2,
+                                          nxy, dxy, version)
+
+        if version == 'chi2':
+            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
+            return chi2
+        else:
+            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
+            return model_vis
+    else:
+        model_img = twod_gauss2blob_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle,
+                                          dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1,
+                                          ang_b1, peak_b2, sigma_b2_arcsec, dist_b2, ang_b2,
+                                          nxy, dxy, version)
+        return model_img
+
+
+###############################################################################
+# 4. Model: 2D Gaussian Ring + 3 Gaussian Blobs (19 parameters)
+###############################################################################
+
+def twod_gauss3blob_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy, version):
+    r"""
+    Generates a 2D image matrix of an inclined Gaussian ring plus 3 distinct Gaussian clusters.
+    """
+    xx, yy = get_grid(nxy, dxy)
+
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    xdot_b2 = dist_b2 * np.sin(ang_b2)
+    ydot_b2 = dist_b2 * np.cos(ang_b2)
+
+    xdot_b3 = dist_b3 * np.sin(ang_b3)
+    ydot_b3 = dist_b3 * np.cos(ang_b3)
+
+    if version in ("chi2", "vis"):
+        xinc = xx / np.cos(inc)
+        radius_vec = np.hypot(xinc, yy)
+
+        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
+        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
+        blob2_model_jypix = gaussblob_prof(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
+        blob3_model_jypix = gaussblob_prof(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
+
+        return ring_model_jypix + blob1_model_jypix + blob2_model_jypix + blob3_model_jypix
+
+    elif version == 'plot':
+        xx_shifted = xx - dra
+        yy_shifted = yy - ddec
+
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+
+        xinc = xpa / np.cos(inc)
+        radius_vec = np.hypot(xinc, ypa)
+
+        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1.0)
+        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1.0)
+        blob2_model_jysr = gaussblob_prof(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2, 1.0)
+        blob3_model_jysr = gaussblob_prof(peak_b3, sigma_b3, xpa, ypa, xdot_b3, ydot_b3, 1.0)
+
+        return ring_model_jysr + blob1_model_jysr + blob2_model_jysr + blob3_model_jysr
+
+    else:
+        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
+        logging.warning(msg)
+        raise ValueError(msg)
+
+
+def twod_gauss3blob(pars, args, vis_data, version):
+    r"""
+    Top-level model handler for 2D Gaussian Ring + 3 Gaussian Blobs (19 parameters):
+    pars: [Ring LogFlux, Ring LogSigma, Ring Rad, Inc, PA, Offset RA, Offset Dec,
+           B1 LogFlux, B1 LogSigma, B1 Dist, B1 Angle,
+           B2 LogFlux, B2 LogSigma, B2 Dist, B2 Angle,
+           B3 LogFlux, B3 LogSigma, B3 Dist, B3 Angle]
+    """
+    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars
+    nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    inclination *= deg
+    posangle *= deg
+    ang_b1 *= deg
+    ang_b2 *= deg
+    ang_b3 *= deg
+
+    sigma_arcsec = 10.0**log_sigma
+    sigma_b1_arcsec = 10.0**log_sigma_b1
+    sigma_b2_arcsec = 10.0**log_sigma_b2
+    sigma_b3_arcsec = 10.0**log_sigma_b3
+
+    sigma_rad = sigma_arcsec * arcsec
+    sigma_b1_rad = sigma_b1_arcsec * arcsec
+    sigma_b2_rad = sigma_b2_arcsec * arcsec
+    sigma_b3_rad = sigma_b3_arcsec * arcsec
+    ring_rad_rad = ring_rad * arcsec
+
+    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
+    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
+    peak_b2 = blob_flux_to_peak(log_flux_b2, sigma_b2_rad)
+    peak_b3 = blob_flux_to_peak(log_flux_b3, sigma_b3_rad)
+
+    if version in ("chi2", "vis"):
+        dRA_rad = dRA * arcsec
+        dDec_rad = dDec * arcsec
+        dist_b1_rad = dist_b1 * arcsec
+        dist_b2_rad = dist_b2 * arcsec
+        dist_b3_rad = dist_b3 * arcsec
+        model_img = twod_gauss3blob_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle,
+                                          dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad,
+                                          ang_b1, peak_b2, sigma_b2_rad, dist_b2_rad, ang_b2,
+                                          peak_b3, sigma_b3_rad, dist_b3_rad, ang_b3, nxy, dxy, version)
+
+        if version == 'chi2':
+            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
+            return chi2
+        else:
+            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
+            return model_vis
+    else:
+        model_img = twod_gauss3blob_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle,
+                                          dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1,
+                                          ang_b1, peak_b2, sigma_b2_arcsec, dist_b2, ang_b2,
+                                          peak_b3, sigma_b3_arcsec, dist_b3, ang_b3, nxy, dxy, version)
+        return model_img
+
+
+###############################################################################
 # Dispatcher & Metadata Functions
 ###############################################################################
 
 def model_prof(pars, args, vis_data, version, fittype):
     r"""
     Central dispatcher function for model profile evaluation.
-    Only supports 'twod_gaussring' and 'twod_gauss1blob'.
+    Supports 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', and 'twod_gauss3blob'.
     """
     if version not in ("chi2", "vis", "plot"):
         msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
@@ -271,8 +484,12 @@ def model_prof(pars, args, vis_data, version, fittype):
         return twod_gaussring(pars, args, vis_data, version)
     elif fittype == 'twod_gauss1blob':
         return twod_gauss1blob(pars, args, vis_data, version)
+    elif fittype == 'twod_gauss2blob':
+        return twod_gauss2blob(pars, args, vis_data, version)
+    elif fittype == 'twod_gauss3blob':
+        return twod_gauss3blob(pars, args, vis_data, version)
     else:
-        msg = f"Invalid or unsupported fittype '{fittype}' in advi_version. Supported models are 'twod_gaussring' and 'twod_gauss1blob'."
+        msg = f"Invalid or unsupported fittype '{fittype}' in advi_version. Supported models are 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', and 'twod_gauss3blob'."
         logging.error(msg)
         raise ValueError(msg)
 
@@ -280,7 +497,6 @@ def model_prof(pars, args, vis_data, version, fittype):
 def model_addon(fittype):
     r"""
     Returns parameter metadata (labels, physical units, dimensionality) for ADVI.
-    Only supports 'twod_gaussring' and 'twod_gauss1blob'.
     """
     if fittype == 'twod_gaussring':
         label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
@@ -298,8 +514,36 @@ def model_addon(fittype):
         ]
         ndim = len(label)
 
+    elif fittype == 'twod_gauss2blob':
+        label = [
+            "Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec",
+            "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle",
+            "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle"
+        ]
+        unit = [
+            "log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec",
+            "log(Jy)", "log(arcsec)", "arcsec", "degrees",
+            "log(Jy)", "log(arcsec)", "arcsec", "degrees"
+        ]
+        ndim = len(label)
+
+    elif fittype == 'twod_gauss3blob':
+        label = [
+            "Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec",
+            "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle",
+            "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle",
+            "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"
+        ]
+        unit = [
+            "log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec",
+            "log(Jy)", "log(arcsec)", "arcsec", "degrees",
+            "log(Jy)", "log(arcsec)", "arcsec", "degrees",
+            "log(Jy)", "log(arcsec)", "arcsec", "degrees"
+        ]
+        ndim = len(label)
+
     else:
-        msg = f"Invalid or unsupported fittype '{fittype}' in advi_version. Supported models are 'twod_gaussring' and 'twod_gauss1blob'."
+        msg = f"Invalid or unsupported fittype '{fittype}' in advi_version."
         logging.error(msg)
         raise ValueError(msg)
 

@@ -15,7 +15,7 @@
 #   $2 - OUT_DIR:   Target persistent directory for all run outputs.
 #   $3 - NAME:      Identifier/label for the fitting run (used in filenames).
 #   $4 - DATA_PATH: Absolute path to the calibrated UV visibility table.
-#   $5 - FITTYPE:   Model geometry identifier ('twod_gaussring' or 'twod_gauss1blob').
+#   $5 - FITTYPE:   Model geometry identifier ('twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', 'twod_gauss3blob').
 #
 # Pipeline Architecture:
 #   launch_headless_scratch.py (CANFAR session)

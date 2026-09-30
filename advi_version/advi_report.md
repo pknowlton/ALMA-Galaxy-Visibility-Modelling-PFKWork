@@ -8,6 +8,8 @@
 **Models Supported:**
 1. `twod_gaussring` (Inclined 2D Gaussian Ring, 7 parameters)
 2. `twod_gauss1blob` (Inclined 2D Gaussian Ring + 1 compact Gaussian Blob, 11 parameters)
+3. `twod_gauss2blob` (Inclined 2D Gaussian Ring + 2 compact Gaussian Blobs, 15 parameters)
+4. `twod_gauss3blob` (Inclined 2D Gaussian Ring + 3 compact Gaussian Blobs, 19 parameters)
 
 ---
 
@@ -20,8 +22,8 @@ Nested sampling (`dynesty`) and ensemble MCMC (`emcee`) operate by drawing thous
 In `advi_version/`:
 - All physical coordinate systems, Fourier convention fixes, and audit remediation items from `dynesty_version_fixed/` are **strictly preserved**.
 - Direct dependencies on **Galario** (GPU Accelerated Library for Analyzing Radio Interferometer Observations) and **CASA** (CASAcore / `casatasks` / `casatools`) are maintained identically without artificial fallbacks.
-- The pipeline is fully streamlined to focus on the two requested models (`twod_gaussring` and `twod_gauss1blob`).
-- Complete automated unit tests verify coordinate parity, analytical transformation Jacobians, and optimization convergence.
+- The pipeline supports the four primary ring and clump configurations (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, and `twod_gauss3blob`).
+- Complete automated unit tests verify coordinate parity, analytical transformation Jacobians, and optimization convergence across all models.
 
 ---
 
@@ -84,11 +86,13 @@ The following core physics, conventions, and operational infrastructure were tra
 ## 4. What Was Changed
 
 1. **`model_prof.py` (Streamlined Scope)**:
-   - dynesty version contained ~1,000 lines supporting 7 different multi-blob configurations (`twod_gauss1blob_2peak`, `twod_gauss1blob_2peak_dp`, `twod_gauss2blob`, `twod_gauss3blob`, `simgauss`).
-   - Per user instructions, `advi_version/input_dir/model_prof.py` was trimmed down to include **only the two requested models**:
+   - dynesty version contained ~1,000 lines supporting 7 different multi-blob configurations (including concentric core-envelopes and double pendulums).
+   - In `advi_version/input_dir/model_prof.py`, support is implemented for the four primary galaxy geometries:
      - `twod_gaussring` (7 parameters)
      - `twod_gauss1blob` (11 parameters)
-   - `model_addon(fittype)` and `model_prof(..., fittype)` now validate against this restricted set and raise explicit, descriptive errors if an unsupported model is invoked.
+     - `twod_gauss2blob` (15 parameters)
+     - `twod_gauss3blob` (19 parameters)
+   - `model_addon(fittype)` and `model_prof(..., fittype)` validate against these four models and raise explicit, descriptive errors if an unsupported model is invoked.
 2. **Prior Architecture (`prior_advi.py` vs. `prior_tform_streamline.py`)**:
    - **Dynesty requirement**: Required an inverse-CDF / quantile transform $F^{-1}(u)$ mapping a unit hypercube $u \in [0, 1]^D$ to physical parameters $\theta$.
    - **ADVI requirement**: Requires bijective, continuously differentiable mappings $T: \text{supp}(p) \to \mathbb{R}^D$ that project constrained physical parameters $\theta$ to **unconstrained real space** $\zeta \in (-\infty, \infty)^D$, along with their inverse $T^{-1}(\zeta)$ and exact transformation log-Jacobian determinants.
@@ -124,13 +128,13 @@ The following core physics, conventions, and operational infrastructure were tra
      $$\nabla_\zeta \ln p(\zeta) = 1 - 2\sigma(\zeta)$$
      Because this gradient is exact, it introduces zero numerical error.
 3. **`test_advi.py` (Automated Test Suite)**:
-   - Includes 11 automated unit and integration tests verifying:
+   - Includes 15 automated unit and integration tests verifying:
      - Numerical stability of $\sigma(z), \operatorname{logit}(u),$ and $\ln(\sigma(z)(1-\sigma(z)))$.
-     - Bijective roundtrip transformation consistency ($\theta \to \zeta \to \theta$).
-     - Exact match between analytical transformation derivatives $\frac{d\theta}{d\zeta}$ and numerical finite differences.
-     - Exact match between analytical prior gradients $\nabla_\zeta \ln p(\zeta)$ and numerical finite differences.
+     - Bijective roundtrip transformation consistency ($\theta \to \zeta \to \theta$) for all 4 models.
+     - Exact match between analytical transformation derivatives $\frac{d\theta}{d\zeta}$ and numerical finite differences across all models.
+     - Exact match between analytical prior gradients $\nabla_\zeta \ln p(\zeta)$ and numerical finite differences across all models.
      - Model metadata validity and rejection of unsupported profiles.
-     - End-to-end optimization loop execution on synthetic visibility data.
+     - End-to-end optimization loop execution on synthetic visibility data for `twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, and `twod_gauss3blob`.
 4. **`stan_reference/` (Blog Reference Bridge)**:
    - Provides `ring_visibility_model.stan`, `fit_advi_cmdstan.py`, and `fit_advi_cmdstan.R`.
    - Explains the architectural bridge: why Stan cannot directly trace computational graphs through external C++/CUDA FFT libraries like Galario, and how `run_advi.py` implements the exact ADVI algorithm from the blog post while retaining full Galario compatibility.

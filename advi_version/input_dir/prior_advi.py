@@ -79,6 +79,39 @@ GAUSS1BLOB_USER_PRIORS = np.array([
     [330.0, 390.0]  # 10: Blob 1 Azimuthal Angle [deg] (East of North, counter-clockwise)
 ], dtype=float)
 
+# twod_gauss2blob: Two Distinct Clumps (parameters 7-14)
+GAUSS2BLOB_USER_PRIORS = np.array([
+    # Blob 1: North clump (YMC 6 complex)
+    [6.030, 8.530], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 8:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 9:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [330.0, 390.0], # 10: Blob 1 Angle [deg] (East of North, CCW)
+    # Blob 2: South-West clump (YMC 17/18 complex)
+    [6.030, 8.530], # 11: Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 12: Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [177.0, 205.0]  # 14: Blob 2 Angle [deg] (East of North, CCW)
+], dtype=float)
+
+# twod_gauss3blob: Three Distinct Clumps (parameters 7-18)
+GAUSS3BLOB_USER_PRIORS = np.array([
+    # Blob 1: North clump (YMC 6 complex, disk angle ~348 deg)
+    [6.030, 8.530], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 8:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 9:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [330.0, 390.0], # 10: Blob 1 Angle [deg] (East of North, CCW)
+    # Blob 2: South-West clump (YMC 17/18 complex, disk angle ~182-185 deg)
+    [6.030, 8.530], # 11: Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 12: Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [177.0, 205.0], # 14: Blob 2 Angle [deg] (East of North, CCW)
+    # Blob 3: South-East clump (YMC 15 complex, disk angle ~171 deg)
+    [6.030, 8.530], # 15: Blob 3 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 16: Blob 3 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 17: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [155.0, 177.0]  # 18: Blob 3 Angle [deg] (East of North, CCW)
+], dtype=float)
+
 
 def compile_advi_priors():
     """
@@ -97,11 +130,29 @@ def compile_advi_priors():
     b1_comp[0, 1] = blob_peak_to_logflux(GAUSS1BLOB_USER_PRIORS[0, 1], sigma_bounds=GAUSS1BLOB_USER_PRIORS[1])
     b1_comp[1, 0] = sigma_to_logsigma(GAUSS1BLOB_USER_PRIORS[1, 0])
     b1_comp[1, 1] = sigma_to_logsigma(GAUSS1BLOB_USER_PRIORS[1, 1])
-
     gauss1blob_ranges = np.vstack([r_comp, b1_comp])
-    return r_comp, gauss1blob_ranges
 
-RING_PRIOR_RANGES, GAUSS1BLOB_PRIOR_RANGES = compile_advi_priors()
+    # 3. Blob 2 priors
+    b2b_comp = np.copy(GAUSS2BLOB_USER_PRIORS)
+    for k in (0, 4):
+        b2b_comp[k, 0] = blob_peak_to_logflux(GAUSS2BLOB_USER_PRIORS[k, 0], sigma_bounds=GAUSS2BLOB_USER_PRIORS[k + 1])
+        b2b_comp[k, 1] = blob_peak_to_logflux(GAUSS2BLOB_USER_PRIORS[k, 1], sigma_bounds=GAUSS2BLOB_USER_PRIORS[k + 1])
+        b2b_comp[k + 1, 0] = sigma_to_logsigma(GAUSS2BLOB_USER_PRIORS[k + 1, 0])
+        b2b_comp[k + 1, 1] = sigma_to_logsigma(GAUSS2BLOB_USER_PRIORS[k + 1, 1])
+    gauss2blob_ranges = np.vstack([r_comp, b2b_comp])
+
+    # 4. Blob 3 priors
+    b3_comp = np.copy(GAUSS3BLOB_USER_PRIORS)
+    for k in (0, 4, 8):
+        b3_comp[k, 0] = blob_peak_to_logflux(GAUSS3BLOB_USER_PRIORS[k, 0], sigma_bounds=GAUSS3BLOB_USER_PRIORS[k + 1])
+        b3_comp[k, 1] = blob_peak_to_logflux(GAUSS3BLOB_USER_PRIORS[k, 1], sigma_bounds=GAUSS3BLOB_USER_PRIORS[k + 1])
+        b3_comp[k + 1, 0] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 0])
+        b3_comp[k + 1, 1] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 1])
+    gauss3blob_ranges = np.vstack([r_comp, b3_comp])
+
+    return r_comp, gauss1blob_ranges, gauss2blob_ranges, gauss3blob_ranges
+
+RING_PRIOR_RANGES, GAUSS1BLOB_PRIOR_RANGES, GAUSS2BLOB_PRIOR_RANGES, GAUSS3BLOB_PRIOR_RANGES = compile_advi_priors()
 
 
 # =============================================================================
@@ -142,8 +193,30 @@ def get_prior_bounds(fittype):
         return RING_PRIOR_RANGES
     elif fittype == 'twod_gauss1blob':
         return GAUSS1BLOB_PRIOR_RANGES
+    elif fittype == 'twod_gauss2blob':
+        return GAUSS2BLOB_PRIOR_RANGES
+    elif fittype == 'twod_gauss3blob':
+        return GAUSS3BLOB_PRIOR_RANGES
     else:
-        raise ValueError(f"Unsupported fittype '{fittype}'. Must be 'twod_gaussring' or 'twod_gauss1blob'.")
+        raise ValueError(f"Unsupported fittype '{fittype}'. Must be 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', or 'twod_gauss3blob'.")
+
+
+def get_model_indices(fittype):
+    """
+    Returns (linear_indices, radial_area_indices) for a given model profile.
+    Radial distance parameters use uniform area prior p(r) ~ r on the disk:
+    r = sqrt(r_min^2 + u * (r_max^2 - r_min^2)).
+    """
+    if fittype == 'twod_gaussring':
+        return list(range(7)), []
+    elif fittype == 'twod_gauss1blob':
+        return [0, 1, 2, 3, 4, 5, 6, 7, 8, 10], [9]
+    elif fittype == 'twod_gauss2blob':
+        return [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 14], [9, 13]
+    elif fittype == 'twod_gauss3blob':
+        return [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 14, 15, 16, 18], [9, 13, 17]
+    else:
+        raise ValueError(f"Unsupported fittype '{fittype}'.")
 
 
 def theta_to_zeta(theta, fittype):
@@ -157,21 +230,16 @@ def theta_to_zeta(theta, fittype):
     ndim = len(low)
 
     zeta = np.empty(ndim, dtype=float)
+    idx_lin, idx_rad = get_model_indices(fittype)
 
-    if fittype == 'twod_gaussring':
-        u = (theta - low) / (high - low)
-        zeta = logit(u)
-    elif fittype == 'twod_gauss1blob':
-        # Linear parameters: 0-8 and 10
-        idx_lin = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10]
+    if idx_lin:
         u_lin = (theta[idx_lin] - low[idx_lin]) / (high[idx_lin] - low[idx_lin])
         zeta[idx_lin] = logit(u_lin)
 
-        # Uniform area radial distance: parameter 9
-        # r = sqrt(r_min^2 + u * (r_max^2 - r_min^2)) => u = (r^2 - r_min^2) / (r_max^2 - r_min^2)
-        r = theta[9]
-        u_r = (r**2 - low[9]**2) / (high[9]**2 - low[9]**2)
-        zeta[9] = logit(u_r)
+    for r_idx in idx_rad:
+        r = theta[r_idx]
+        u_r = (r**2 - low[r_idx]**2) / (high[r_idx]**2 - low[r_idx]**2)
+        zeta[r_idx] = logit(u_r)
 
     return zeta
 
@@ -187,18 +255,16 @@ def zeta_to_theta(zeta, fittype):
     ndim = len(low)
 
     u = sigmoid(zeta)
+    theta = np.empty(ndim, dtype=float)
+    idx_lin, idx_rad = get_model_indices(fittype)
 
-    if fittype == 'twod_gaussring':
-        return low + u * (high - low)
-    elif fittype == 'twod_gauss1blob':
-        theta = np.empty(ndim, dtype=float)
-        # Linear parameters: 0-8 and 10
-        idx_lin = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10]
+    if idx_lin:
         theta[idx_lin] = low[idx_lin] + u[idx_lin] * (high[idx_lin] - low[idx_lin])
 
-        # Radial distance with uniform area: parameter 9
-        theta[9] = np.sqrt(low[9]**2 + u[9] * (high[9]**2 - low[9]**2))
-        return theta
+    for r_idx in idx_rad:
+        theta[r_idx] = np.sqrt(low[r_idx]**2 + u[r_idx] * (high[r_idx]**2 - low[r_idx]**2))
+
+    return theta
 
 
 def grad_zeta_to_theta(zeta, fittype):
@@ -214,18 +280,17 @@ def grad_zeta_to_theta(zeta, fittype):
     u = sigmoid(zeta)
     du_dzeta = u * (1.0 - u)
 
-    if fittype == 'twod_gaussring':
-        return (high - low) * du_dzeta
-    elif fittype == 'twod_gauss1blob':
-        dtheta_dzeta = np.empty(ndim, dtype=float)
-        idx_lin = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10]
+    dtheta_dzeta = np.empty(ndim, dtype=float)
+    idx_lin, idx_rad = get_model_indices(fittype)
+
+    if idx_lin:
         dtheta_dzeta[idx_lin] = (high[idx_lin] - low[idx_lin]) * du_dzeta[idx_lin]
 
-        # Parameter 9: theta[9] = sqrt(low^2 + u * (high^2 - low^2))
-        # dtheta / du = (high^2 - low^2) / (2 * theta[9])
-        r = np.sqrt(low[9]**2 + u[9] * (high[9]**2 - low[9]**2))
-        dtheta_dzeta[9] = ((high[9]**2 - low[9]**2) / (2.0 * max(r, 1e-12))) * du_dzeta[9]
-        return dtheta_dzeta
+    for r_idx in idx_rad:
+        r = np.sqrt(low[r_idx]**2 + u[r_idx] * (high[r_idx]**2 - low[r_idx]**2))
+        dtheta_dzeta[r_idx] = ((high[r_idx]**2 - low[r_idx]**2) / (2.0 * max(r, 1e-12))) * du_dzeta[r_idx]
+
+    return dtheta_dzeta
 
 
 def log_prior_and_jacobian(zeta, fittype):
@@ -256,12 +321,13 @@ def sample_prior(fittype, size=1):
     u = np.random.uniform(0.0, 1.0, size=(size, ndim))
     samples = np.empty((size, ndim), dtype=float)
 
-    if fittype == 'twod_gaussring':
-        samples = low + u * (high - low)
-    elif fittype == 'twod_gauss1blob':
-        idx_lin = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10]
+    idx_lin, idx_rad = get_model_indices(fittype)
+
+    if idx_lin:
         samples[:, idx_lin] = low[idx_lin] + u[:, idx_lin] * (high[idx_lin] - low[idx_lin])
-        samples[:, 9] = np.sqrt(low[9]**2 + u[:, 9] * (high[9]**2 - low[9]**2))
+
+    for r_idx in idx_rad:
+        samples[:, r_idx] = np.sqrt(low[r_idx]**2 + u[:, r_idx] * (high[r_idx]**2 - low[r_idx]**2))
 
     if size == 1:
         return samples[0]
