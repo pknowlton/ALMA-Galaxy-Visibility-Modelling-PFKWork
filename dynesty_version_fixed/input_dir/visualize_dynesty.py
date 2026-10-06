@@ -965,7 +965,7 @@ def main():
         if has_ring and ellipse_ra is not None:
             ax.plot(ellipse_ra, ellipse_dec, transform=ax.get_transform('world'),
                     color='white', linestyle='--', linewidth=1.5, zorder=12, label='Ring Ridge Peak')
-        ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2, zorder=15, label='Sun et al. (2024)')
+        #ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2, zorder=15, label='Sun et al. (2024)')
         ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2, zorder=15, label='Fitted Model')
         ax.scatter(phase_center.ra.deg, phase_center.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='+', s=120, linewidth=2, zorder=15, label='Phase Center')
 
@@ -1084,7 +1084,7 @@ def main():
                             color='white', linestyle='--', linewidth=1.5, zorder=12)
 
             # Central blob coordinate marker
-            ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='blue', marker='x', s=150, linewidth=2, zorder=15)
+            #ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='blue', marker='x', s=150, linewidth=2, zorder=15)
 
             # Slice indicators
             ax_img.axhline(cy - 1.5, color='crimson', linestyle=':', linewidth=1.5)
