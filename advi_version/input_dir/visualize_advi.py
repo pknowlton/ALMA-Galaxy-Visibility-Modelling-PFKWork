@@ -4,11 +4,11 @@ ADVI Visualization, Diagnostics, Residual Imaging, and Post-Processing
 This script post-processes the results of an Automatic Differentiation Variational
 Inference (ADVI) run:
 1. Restores variational optimization state from `./output/<fittype>_advi_checkpoint.npz`.
-2. Extracts variational parameters, posterior draws, and coherent MAP best-fit parameters.
+2. Extracts variational parameters, posterior draws, MAP joint sample, and marginal posterior medians.
 3. Generates ADVI diagnostic figures:
    - ELBO convergence progression across optimization iterations.
    - Posterior corner plot showing 1D marginals and 2D joint contours.
-4. Evaluates best-fit synthetic visibilities via Galario and subtracts them from
+4. Evaluates best-fit synthetic visibilities (posterior medians) via Galario and subtracts them from
    the observed data to produce residual visibilities: $V_{\text{resid}} = V_{\text{obs}} - V_{\text{mod}}$.
 5. Implants residual visibilities into CASA Measurement Sets (`.ms`) and executes
    synthesis dirty imaging (`tclean` with `niter=0`).
@@ -16,8 +16,8 @@ Inference (ADVI) run:
    against the restored CLEAN data image.
 7. Generates multi-panel comparison figures showing:
    [Observed CLEAN Image | Model Sky Intensity (Beam Convolved) | Residual Visibilities]
-   with and without contour overlays, reference cluster positions, 4-panel multi-scale
-   comparisons, 1D horizontal & vertical profile cuts, and a publication-grade summary table.
+   with and without contour overlays, reference cluster positions, 1D horizontal &
+   vertical profile cuts, and a publication-grade summary table.
 8. Saves all figures into a multipage PDF: `./output/<fittype>_advi_plots.pdf`.
 """
 
@@ -168,6 +168,27 @@ def circular_mean_and_dispersion(samples, weights=None, period=180.0):
     return mean_angle, circular_std
 
 
+def compute_posterior_median_pars(samples, labels, ndim):
+    r"""
+    Marginal posterior median parameter vector (circular mean for angle parameters).
+    """
+    pars_median = np.median(samples, axis=0).copy()
+    for i in range(ndim):
+        label_lower = labels[i].lower()
+        if 'posangle' in label_lower or (i == 4):
+            pars_median[i], _ = circular_mean_and_dispersion(samples[:, i], period=180.0)
+        elif 'ang' in label_lower:
+            pars_median[i], _ = circular_mean_and_dispersion(samples[:, i], period=360.0)
+    return pars_median
+
+
+def overlay_corner_marginal_lines(fig, ndim, pars, color, linestyle='-', linewidth=1.8):
+    r"""Overlay vertical lines on 1D marginal axes of a corner plot figure."""
+    for i in range(ndim):
+        ax_idx = i * (i + 3) // 2
+        fig.axes[ax_idx].axvline(pars[i], color=color, linestyle=linestyle, linewidth=linewidth)
+
+
 def plot_elbo_convergence(elbo_history, converged):
     r"""
     Generates a publication-quality diagnostic figure showing the ELBO convergence trajectory.
@@ -194,7 +215,7 @@ def plot_elbo_convergence(elbo_history, converged):
     return fig
 
 
-def render_summary_table_page(samples, pars_bf, fittype, pp):
+def render_summary_table_page(samples, pars_map, fittype, pp):
     r"""
     Constructs and saves the final summary table PDF page containing:
     - Free parameters fitted by ADVI
@@ -207,7 +228,7 @@ def render_summary_table_page(samples, pars_bf, fittype, pp):
         - Equivalent Flux, LogPeak, Sigma, and FWHM for modeled blob component.
     - Two-tiered table header:
         - (Prior information) spanning Prior Low & Prior High
-        - (Results) spanning MAP Estimate & Median (+84% / -16%)
+        - (Results) spanning MAP Estimate & Median Estimate (+84% / -16%)
     """
     ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
     FWHM_FACTOR = 2.354820045
@@ -236,79 +257,72 @@ def render_summary_table_page(samples, pars_bf, fittype, pp):
 
     table_rows = []
 
-    def add_table_row(name, unit, p_low, p_high, ml_val, q_vals):
+    def add_table_row(name, unit, p_low, p_high, map_val, q_vals):
         param_label = f"{name} ({unit})" if unit else name
         table_rows.append([
             param_label,
             fmt_val(p_low),
             fmt_val(p_high),
-            fmt_val(ml_val),
+            fmt_val(map_val),
             fmt_quantiles(q_vals)
         ])
 
     # 1. Ring Component
-    # Row 1: Ring LogFlux
     q_lf = get_quantiles(samples[:, 0])
     add_table_row("Ring LogFlux", "log(Jy)", prior_advi.RING_PRIOR_RANGES[0, 0], prior_advi.RING_PRIOR_RANGES[0, 1],
-                  pars_bf[0], q_lf)
+                  pars_map[0], q_lf)
 
-    # Row 2: Ring Flux (Jy)
     flux_samples = 10.0**samples[:, 0]
     q_flux = get_quantiles(flux_samples)
     add_table_row("Ring Flux", "Jy", 10.0**prior_advi.RING_PRIOR_RANGES[0, 0], 10.0**prior_advi.RING_PRIOR_RANGES[0, 1],
-                  10.0**pars_bf[0], q_flux)
+                  10.0**pars_map[0], q_flux)
 
-    # Row 3: Ring LogPeak (log(Jy/sr))
     cos_inc_samples = np.maximum(np.cos(np.radians(samples[:, 3])), 0.05)
     area_ring_samples = ((2.0 * np.pi)**1.5) * (samples[:, 2] * ARCSEC_TO_RAD) * (10.0**samples[:, 1] * ARCSEC_TO_RAD) * cos_inc_samples
     ring_peak_samples = flux_samples / np.maximum(area_ring_samples, 1e-30)
     ring_logpeak_samples = np.log10(np.maximum(ring_peak_samples, 1e-30))
     q_rpeak = get_quantiles(ring_logpeak_samples)
 
-    cos_inc_ml = max(float(np.cos(np.radians(pars_bf[3]))), 0.05)
-    area_ring_ml = ((2.0 * np.pi)**1.5) * (pars_bf[2] * ARCSEC_TO_RAD) * (10.0**pars_bf[1] * ARCSEC_TO_RAD) * cos_inc_ml
-    ring_peak_ml = (10.0**pars_bf[0]) / max(area_ring_ml, 1e-30)
-    ring_logpeak_ml = np.log10(max(ring_peak_ml, 1e-30))
+    cos_inc_map = max(float(np.cos(np.radians(pars_map[3]))), 0.05)
+    area_ring_map = ((2.0 * np.pi)**1.5) * (pars_map[2] * ARCSEC_TO_RAD) * (10.0**pars_map[1] * ARCSEC_TO_RAD) * cos_inc_map
+    ring_peak_map = (10.0**pars_map[0]) / max(area_ring_map, 1e-30)
+    ring_logpeak_map = np.log10(max(ring_peak_map, 1e-30))
 
     add_table_row("Ring LogPeak", "log(Jy/sr)", prior_advi.COMMON_RING_PRIORS[0, 0], prior_advi.COMMON_RING_PRIORS[0, 1],
-                  ring_logpeak_ml, q_rpeak)
+                  ring_logpeak_map, q_rpeak)
 
-    # Row 4: Ring LogSigma
     q_ls = get_quantiles(samples[:, 1])
     add_table_row("Ring LogSigma", "log(arcsec)", prior_advi.RING_PRIOR_RANGES[1, 0], prior_advi.RING_PRIOR_RANGES[1, 1],
-                  pars_bf[1], q_ls)
+                  pars_map[1], q_ls)
 
-    # Row 5: Ring Sigma (arcsec)
     sigma_samples = 10.0**samples[:, 1]
     q_sigma = get_quantiles(sigma_samples)
     add_table_row("Ring Sigma", "arcsec", prior_advi.COMMON_RING_PRIORS[1, 0], prior_advi.COMMON_RING_PRIORS[1, 1],
-                  10.0**pars_bf[1], q_sigma)
+                  10.0**pars_map[1], q_sigma)
 
-    # Row 6: Ring FWHM (arcsec)
     fwhm_samples = FWHM_FACTOR * sigma_samples
     q_fwhm = get_quantiles(fwhm_samples)
     add_table_row("Ring FWHM", "arcsec", FWHM_FACTOR * prior_advi.COMMON_RING_PRIORS[1, 0], FWHM_FACTOR * prior_advi.COMMON_RING_PRIORS[1, 1],
-                  FWHM_FACTOR * 10.0**pars_bf[1], q_fwhm)
+                  FWHM_FACTOR * 10.0**pars_map[1], q_fwhm)
 
-    # Rows 7-11: Remaining ring parameters
     ring_param_names = ["Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
     ring_param_units = ["arcsec", "degrees", "degrees", "arcsec", "arcsec"]
     for p_idx, (p_name, p_unit) in enumerate(zip(ring_param_names, ring_param_units), start=2):
         q_p = get_quantiles(samples[:, p_idx])
         add_table_row(p_name, p_unit, prior_advi.COMMON_RING_PRIORS[p_idx, 0], prior_advi.COMMON_RING_PRIORS[p_idx, 1],
-                      pars_bf[p_idx], q_p)
+                      pars_map[p_idx], q_p)
 
     def add_blob_component(blob_label, idx_flux, idx_sigma, prior_logflux_range, prior_peak_log_range, prior_sigma_range):
         # 1. LogFlux
         q_lf = get_quantiles(samples[:, idx_flux])
         add_table_row(f"{blob_label} LogFlux", "log(Jy)", prior_logflux_range[0], prior_logflux_range[1],
-                      pars_bf[idx_flux], q_lf)
+                      pars_map[idx_flux], q_lf)
 
         # 2. Flux (Jy)
         b_flux_samples = 10.0**samples[:, idx_flux]
         q_bflux = get_quantiles(b_flux_samples)
         add_table_row(f"{blob_label} Flux", "Jy", 10.0**prior_logflux_range[0], 10.0**prior_logflux_range[1],
-                      10.0**pars_bf[idx_flux], q_bflux)
+                      10.0**pars_map[idx_flux], q_bflux)
 
         # 3. LogPeak (log(Jy/sr))
         b_area_samples = 2.0 * np.pi * ((10.0**samples[:, idx_sigma] * ARCSEC_TO_RAD)**2)
@@ -316,30 +330,30 @@ def render_summary_table_page(samples, pars_bf, fittype, pp):
         b_logpeak_samples = np.log10(np.maximum(b_peak_samples, 1e-30))
         q_bpeak = get_quantiles(b_logpeak_samples)
 
-        b_area_ml = 2.0 * np.pi * ((10.0**pars_bf[idx_sigma] * ARCSEC_TO_RAD)**2)
-        b_peak_ml = (10.0**pars_bf[idx_flux]) / max(b_area_ml, 1e-30)
-        b_logpeak_ml = np.log10(max(b_peak_ml, 1e-30))
+        b_area_map = 2.0 * np.pi * ((10.0**pars_map[idx_sigma] * ARCSEC_TO_RAD)**2)
+        b_peak_map = (10.0**pars_map[idx_flux]) / max(b_area_map, 1e-30)
+        b_logpeak_map = np.log10(max(b_peak_map, 1e-30))
         add_table_row(f"{blob_label} LogPeak", "log(Jy/sr)", prior_peak_log_range[0], prior_peak_log_range[1],
-                      b_logpeak_ml, q_bpeak)
+                      b_logpeak_map, q_bpeak)
 
         # 4. LogSigma
         prior_logsigma_min = np.log10(prior_sigma_range[0])
         prior_logsigma_max = np.log10(prior_sigma_range[1])
         q_ls = get_quantiles(samples[:, idx_sigma])
         add_table_row(f"{blob_label} LogSigma", "log(arcsec)", prior_logsigma_min, prior_logsigma_max,
-                      pars_bf[idx_sigma], q_ls)
+                      pars_map[idx_sigma], q_ls)
 
         # 5. Sigma (arcsec)
         b_sigma_samples = 10.0**samples[:, idx_sigma]
         q_bsigma = get_quantiles(b_sigma_samples)
         add_table_row(f"{blob_label} Sigma", "arcsec", prior_sigma_range[0], prior_sigma_range[1],
-                      10.0**pars_bf[idx_sigma], q_bsigma)
+                      10.0**pars_map[idx_sigma], q_bsigma)
 
         # 6. FWHM (arcsec)
         b_fwhm_samples = FWHM_FACTOR * b_sigma_samples
         q_bfwhm = get_quantiles(b_fwhm_samples)
         add_table_row(f"{blob_label} FWHM", "arcsec", FWHM_FACTOR * prior_sigma_range[0], FWHM_FACTOR * prior_sigma_range[1],
-                      FWHM_FACTOR * 10.0**pars_bf[idx_sigma], q_bfwhm)
+                      FWHM_FACTOR * 10.0**pars_map[idx_sigma], q_bfwhm)
 
     # 2. Model-Specific Blob Components
     if fittype == 'twod_gauss1blob':
@@ -349,10 +363,10 @@ def render_summary_table_page(samples, pars_bf, fittype, pp):
                            prior_advi.GAUSS1BLOB_USER_PRIORS[1])
         q_dist = get_quantiles(samples[:, 9])
         add_table_row("B1 Dist", "arcsec", prior_advi.GAUSS1BLOB_USER_PRIORS[2, 0], prior_advi.GAUSS1BLOB_USER_PRIORS[2, 1],
-                      pars_bf[9], q_dist)
+                      pars_map[9], q_dist)
         q_ang = get_quantiles(samples[:, 10])
         add_table_row("B1 Angle", "degrees", prior_advi.GAUSS1BLOB_USER_PRIORS[3, 0], prior_advi.GAUSS1BLOB_USER_PRIORS[3, 1],
-                      pars_bf[10], q_ang)
+                      pars_map[10], q_ang)
 
     elif fittype == 'twod_gauss2blob':
         for k, name in [(1, 'B1'), (2, 'B2')]:
@@ -364,10 +378,10 @@ def render_summary_table_page(samples, pars_bf, fittype, pp):
                                prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 1])
             q_dist = get_quantiles(samples[:, idx_base + 2])
             add_table_row(f"{name} Dist", "arcsec", prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 2, 0], prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 2, 1],
-                          pars_bf[idx_base + 2], q_dist)
+                          pars_map[idx_base + 2], q_dist)
             q_ang = get_quantiles(samples[:, idx_base + 3])
             add_table_row(f"{name} Angle", "degrees", prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 3, 0], prior_advi.GAUSS2BLOB_USER_PRIORS[u_base + 3, 1],
-                          pars_bf[idx_base + 3], q_ang)
+                          pars_map[idx_base + 3], q_ang)
 
     elif fittype == 'twod_gauss3blob':
         for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
@@ -379,47 +393,63 @@ def render_summary_table_page(samples, pars_bf, fittype, pp):
                                prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 1])
             q_dist = get_quantiles(samples[:, idx_base + 2])
             add_table_row(f"{name} Dist", "arcsec", prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 2, 0], prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 2, 1],
-                          pars_bf[idx_base + 2], q_dist)
+                          pars_map[idx_base + 2], q_dist)
             q_ang = get_quantiles(samples[:, idx_base + 3])
             add_table_row(f"{name} Angle", "degrees", prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], prior_advi.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
-                          pars_bf[idx_base + 3], q_ang)
+                          pars_map[idx_base + 3], q_ang)
 
-    # Render Summary Table Figure
-    num_rows = len(table_rows)
-    fig_height = max(10, int(num_rows * 0.45 + 3.0))
-    fig_table, ax_table = plt.subplots(figsize=(16, fig_height))
-    ax_table.axis('off')
+    col_labels = ["Parameter", "Low", "High", "MAP Estimate", "Median Estimate"]
+    col_widths = [0.32, 0.15, 0.15, 0.16, 0.22]
+    top_widths = [0.32, 0.30, 0.38]
 
-    col_labels = ["Parameter (unit)", "Prior Low", "Prior High", "MAP Best Fit", "Median (+84% / -16%)"]
+    fig_height = max(8.5, 0.38 * len(table_rows) + 2.0)
+    fig_tab, ax_tab = plt.subplots(figsize=(14, fig_height))
+    ax_tab.axis('off')
 
-    tab = ax_table.table(
+    n_rows = len(table_rows) + 1
+    h_row = 0.85 / (n_rows + 1)
+    main_h = n_rows * h_row
+    top_h = h_row
+    bottom_main = 0.05
+    left = 0.05
+    width = 0.90
+
+    tab_top = ax_tab.table(
+        cellText=[['', 'Prior - U(Low, High)', 'Results']],
+        colWidths=top_widths,
+        bbox=[left, bottom_main + main_h, width, top_h],
+        cellLoc='center'
+    )
+
+    tab_main = ax_tab.table(
         cellText=table_rows,
         colLabels=col_labels,
-        loc='center',
-        cellLoc='center',
-        colLoc='center'
+        colWidths=col_widths,
+        bbox=[left, bottom_main, width, main_h],
+        cellLoc='center'
     )
-    tab.auto_set_font_size(False)
-    tab.set_fontsize(12)
-    tab.scale(1.0, 1.6)
 
-    # Style header row
-    for col_idx in range(len(col_labels)):
-        cell = tab[0, col_idx]
-        cell.set_facecolor('#2b5c8f')
-        cell.set_text_props(color='white', weight='bold', size=13)
+    tab_top[(0, 0)].set_visible(False)
+    tab_top[(0, 1)].set_facecolor('#c0c0c0')
+    tab_top[(0, 1)].set_text_props(weight='bold', size=11)
+    tab_top[(0, 2)].set_facecolor('#c0c0c0')
+    tab_top[(0, 2)].set_text_props(weight='bold', size=11)
 
-    # Alternating row colors
-    for r_idx in range(1, num_rows + 1):
-        row_bg = '#f5f7fa' if (r_idx % 2 == 0) else '#ffffff'
-        for c_idx in range(len(col_labels)):
-            tab[r_idx, c_idx].set_facecolor(row_bg)
+    for c in range(5):
+        tab_main[(0, c)].set_facecolor('#d9d9d9')
+        tab_main[(0, c)].set_text_props(weight='bold', size=10)
 
-    fig_table.suptitle(f"ADVI Parameter Summary Table: {fittype}", fontsize=20, weight='bold', y=0.96)
-    fig_table.tight_layout()
-    pp.savefig(fig_table, dpi=300)
-    plt.close(fig_table)
-    logging.info('Successfully saved the parameter summary table page...')
+    for row_idx in range(1, len(table_rows) + 1):
+        bg_color = '#f5f5f5' if row_idx % 2 == 0 else '#ffffff'
+        for col_idx in range(5):
+            tab_main[(row_idx, col_idx)].set_facecolor(bg_color)
+            tab_main[(row_idx, col_idx)].set_text_props(size=10)
+
+    clean_fittype = fittype.replace('_', r'\_')
+    fig_tab.suptitle(f"ADVI Posterior Summary and Derived Parameters: {clean_fittype}", fontsize=16, y=0.98)
+    pp.savefig(fig_tab, bbox_inches='tight')
+    plt.close(fig_tab)
+    logging.info('Successfully saved final summary table page to PDF...')
 
 
 def main():
@@ -446,7 +476,7 @@ def main():
     logging.info(f'Fittype: {fittype}')
 
     # --------------------------------------------------------------------------
-    # 1. Restore ADVI Checkpoint & MAP Best-Fit Parameter Selection
+    # 1. Restore ADVI Checkpoint & Posterior Parameter Summaries
     # --------------------------------------------------------------------------
     check_file = f'./output/{fittype}_advi_checkpoint.npz'
     if not os.path.exists(check_file):
@@ -456,17 +486,19 @@ def main():
 
     data = np.load(check_file, allow_pickle=True)
     samples = data['samples']
-    pars_bf = data['best_fit'].copy()
+    pars_map = data['best_fit'].copy()
     elbo_history = data['elbo_history']
     converged = bool(data['converged'])
     labels = list(data['labels'])
     units = list(data['units'])
     ndim = int(data['ndim'])
+    pars_bf = compute_posterior_median_pars(samples, labels, ndim)
 
     logging.info(f"Read in results from saved checkpoint file {check_file}")
     logging.info(f"Dimensions for {fittype}: {ndim}")
     logging.info(f"Parameters for {fittype}: {labels}")
-    logging.info(f"Coherent Joint Best-Fit (MAP) Parameters: {pars_bf}")
+    logging.info(f"Coherent Joint MAP Parameters: {pars_map}")
+    logging.info(f"Marginal Posterior Median Parameters (used for best-fit model): {pars_bf}")
 
     # Log marginal quantiles and circular stats
     logging.info("Marginal posterior medians and 68% credible intervals:")
@@ -514,7 +546,18 @@ def main():
         title_fmt='.3f',
         color='dodgerblue',
         truths=pars_bf,
-        truth_color='crimson'
+        truth_color='forestgreen'
+    )
+    overlay_corner_marginal_lines(fig_corner, ndim, pars_map, color='crimson', linestyle='-', linewidth=1.8)
+    from matplotlib.lines import Line2D
+    fig_corner.legend(
+        handles=[
+            Line2D([0], [0], color='forestgreen', lw=2, label='Posterior median (best fit)'),
+            Line2D([0], [0], color='crimson', lw=2, label='Joint MAP'),
+        ],
+        loc='upper right',
+        fontsize=10,
+        frameon=True,
     )
     pp.savefig(fig_corner, dpi=300)
     plt.close(fig_corner)
@@ -727,10 +770,8 @@ def main():
     x_shifted = x_pa * np.cos(pa) + y_pa * np.sin(pa)
     y_shifted = -x_pa * np.sin(pa) + y_pa * np.cos(pa)
 
-    x_sky = x_shifted + dRA
-    y_sky = y_shifted + dDec
-
-    ellipse_sky = phase_center.spherical_offsets_by(x_sky * u.arcsec, y_sky * u.arcsec)
+    ngc3351_center = phase_center.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+    ellipse_sky = ngc3351_center.spherical_offsets_by(x_shifted * u.arcsec, y_shifted * u.arcsec)
     ellipse_ra = ellipse_sky.ra.deg
     ellipse_dec = ellipse_sky.dec.deg
 
@@ -845,7 +886,6 @@ def main():
         ax.set_autoscale_on(False)
         ax.plot(ellipse_ra, ellipse_dec, transform=ax.get_transform('world'),
                 color='white', linestyle='--', linewidth=1.5, zorder=12, label='Ring Ridge Peak')
-        ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2, zorder=15, label='Sun et al. (2024)')
         ax.scatter(advi_ra, advi_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2, zorder=15, label='Fitted Model')
         ax.scatter(phase_center.ra.deg, phase_center.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='+', s=120, linewidth=2, zorder=15, label='Phase Center')
 
@@ -940,93 +980,59 @@ def main():
             pixel_world_dec = cut_wcs.pixel_to_world(np.full(ny_cut, cx), y_indices)
             dec_offsets_arcsec = (pixel_world_dec.dec.deg - b_dec) * 3600.0
 
-            fig_prof = plt.figure(figsize=(18, 6))
-            gs_prof = fig_prof.add_gridspec(2, 2, width_ratios=[1.2, 1.8], height_ratios=[1, 1],
-                                            wspace=0.3, hspace=0.35)
+            fig = plt.figure(figsize=(24, 8))
 
-            ax_img = fig_prof.add_subplot(gs_prof[:, 0], projection=cut_wcs)
-            im_blob = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower',
-                                   cmap='inferno', rasterized=True)
-            cbar_blob = plt.colorbar(im_blob, ax=ax_img, orientation='vertical', pad=0.05, shrink=0.85)
-            cbar_blob.set_label(r"Intensity (MJy/sr)", size=14, labelpad=10)
+            ax_img = plt.subplot(131, projection=cut_wcs)
+            im_zoom = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower', cmap='inferno', rasterized=True)
+            cbar_zoom = plt.colorbar(mappable=im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
+            cbar_zoom.set_label(r'Specific Intensity (MJy/sr)', size=16)
 
-            ax_img.axhline(cy, color='cyan', linestyle='--', linewidth=1.2, alpha=0.8)
-            ax_img.axvline(cx, color='lime', linestyle='--', linewidth=1.2, alpha=0.8)
-            ax_img.set_xlabel(r"Right Ascension (J2000)", size=14)
-            ax_img.set_ylabel(r"Declination (J2000)", size=14)
-
-            label_comp = f"Ring Center" if (fittype == 'twod_gaussring') else f"Component {b_idx + 1}"
-            ax_img.set_title(f"{label_comp}: {target_name}", size=14, weight='bold')
             safe_add_beam(ax_img, header=hdr_data, frame=False, color='white', corner='bottom left')
 
-            ax_ra = fig_prof.add_subplot(gs_prof[0, 1])
-            ax_ra.plot(ra_offsets_arcsec, ra_profile, color='cyan', linewidth=2.0)
-            ax_ra.axvline(0, color='gray', linestyle=':', alpha=0.7)
-            ax_ra.set_xlabel(r"$\Delta\alpha\cos\delta$ (arcsec)", size=12)
-            ax_ra.set_ylabel(r"Intensity (MJy/sr)", size=12)
-            ax_ra.set_title(r"1D RA Profile ($\pm 1$ pixel average)", size=13, weight='bold')
+            ax_img.set_autoscale_on(False)
+            ax_img.plot(ellipse_ra, ellipse_dec, transform=ax_img.get_transform('world'),
+                        color='white', linestyle='--', linewidth=1.5, zorder=12)
+
+            ax_img.axhline(cy - 1.5, color='crimson', linestyle=':', linewidth=1.5)
+            ax_img.axhline(cy + 1.5, color='crimson', linestyle=':', linewidth=1.5)
+            ax_img.axvline(cx - 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
+            ax_img.axvline(cx + 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
+
+            ax_img.set_xlabel(r"Right Ascension (J2000)", size=20)
+            ax_img.set_ylabel(r"Declination (J2000)", size=20, labelpad=1)
+
+            ax_ra = plt.subplot(132)
+            ax_ra.plot(ra_offsets_arcsec, ra_profile, color='crimson', lw=2.5)
+            ax_ra.axvline(0.0, color='gray', linestyle='--', alpha=0.7)
+            ax_ra.set_xlim(ra_offsets_arcsec[0], ra_offsets_arcsec[-1])
             ax_ra.set_ylim(ylim_min, ylim_max)
-            ax_ra.grid(True, linestyle='--', alpha=0.5)
+            ax_ra.set_xlabel(r"$\Delta$RA Offset (arcsec)", size=20)
+            ax_ra.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
+            ax_ra.set_title(r"1D RA Profile ($\pm 1$ Dec pixel avg)", size=18)
+            ax_ra.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
+            ax_ra.grid(True, alpha=0.3, linestyle=':')
 
-            ax_dec = fig_prof.add_subplot(gs_prof[1, 1])
-            ax_dec.plot(dec_offsets_arcsec, dec_profile, color='lime', linewidth=2.0)
-            ax_dec.axvline(0, color='gray', linestyle=':', alpha=0.7)
-            ax_dec.set_xlabel(r"$\Delta\delta$ (arcsec)", size=12)
-            ax_dec.set_ylabel(r"Intensity (MJy/sr)", size=12)
-            ax_dec.set_title(r"1D Dec Profile ($\pm 1$ pixel average)", size=13, weight='bold')
+            ax_dec = plt.subplot(133)
+            ax_dec.plot(dec_offsets_arcsec, dec_profile, color='dodgerblue', lw=2.5)
+            ax_dec.axvline(0.0, color='gray', linestyle='--', alpha=0.7)
+            ax_dec.set_xlim(dec_offsets_arcsec[0], dec_offsets_arcsec[-1])
             ax_dec.set_ylim(ylim_min, ylim_max)
-            ax_dec.grid(True, linestyle='--', alpha=0.5)
+            ax_dec.set_xlabel(r"$\Delta$Dec Offset (arcsec)", size=20)
+            ax_dec.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
+            ax_dec.set_title(r"1D Dec Profile ($\pm 1$ RA pixel avg)", size=18)
+            ax_dec.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
+            ax_dec.grid(True, alpha=0.3, linestyle=':')
 
-            pp.savefig(fig_prof, dpi=300)
-            plt.close(fig_prof)
-
-    # --- Figure 4: 4-Panel Multi-Scale Assessment ---
-    fig_4p = plt.figure(figsize=(24, 6))
-
-    ax1 = plt.subplot(141, projection=data_wcs)
-    im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.04, shrink=0.8, aspect=15)
-    cbar1.set_label("MJy/sr", size=14)
-    ax1.set_title("Observed CLEAN Data", size=16, weight='bold')
-
-    ax2 = plt.subplot(142, projection=mod_wcs)
-    im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.04, shrink=0.8, aspect=15)
-    cbar2.set_label("MJy/sr", size=14)
-    ax2.set_title("Model (Beam Convolved)", size=16, weight='bold')
-
-    ax3 = plt.subplot(143, projection=mod_wcs)
-    im3 = ax3.imshow(ring_model_intrinsic_mjy, vmin=0, vmax=np.max(ring_model_intrinsic_mjy), origin='lower', cmap='inferno', rasterized=True)
-    cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.04, shrink=0.8, aspect=15)
-    cbar3.set_label("MJy/sr (unconvolved)", size=14)
-    ax3.set_title("Intrinsic Sky Model", size=16, weight='bold')
-
-    ax4 = plt.subplot(144, projection=data_wcs)
-    im4 = ax4.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar4 = plt.colorbar(mappable=im4, ax=ax4, orientation='vertical', location='right', pad=0.04, shrink=0.8, aspect=15)
-    cbar4.set_label("MJy/sr", size=14)
-    ax4.set_title("Dirty Residual Visibilities", size=16, weight='bold')
-
-    four_axes = [ax1, ax2, ax3, ax4]
-    for idx_ax, ax in enumerate(four_axes):
-        if idx_ax != 2:
-            safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
-        if ax != ax1:
-            ax.set_ylabel(r'', size=0)
-            ax.coords[1].set_ticklabel(size=0)
-        else:
-            ax.set_ylabel(r"Declination (J2000)", size=18, labelpad=1)
-        ax.set_xlabel(r"Right Ascension (J2000)", size=18)
-
-    fig_4p.suptitle(f"93 GHz Continuum Assessment: {fittype}", size=24, weight='bold', y=1.02)
-    fig_4p.subplots_adjust(left=0.05, right=0.97, hspace=0.1, wspace=0.25)
-    pp.savefig(fig_4p, dpi=300)
-    plt.close(fig_4p)
+            blob_label = f"Peak {b_idx + 1}" if "2peak" in fittype else (f"Blob {b_idx + 1}" if len(advi_coords) > 1 else "Blob")
+            fig.suptitle(f"{target_name} - {blob_label} Zoom ($2'' \\times 2''$)", size=26)
+            fig.subplots_adjust(hspace=0.2, wspace=0.28, bottom=0.15)
+            pp.savefig(fig)
+            plt.close(fig)
 
     # --------------------------------------------------------------------------
     # 8. Publication-Grade Parameter Summary Table
     # --------------------------------------------------------------------------
-    render_summary_table_page(samples, pars_bf, fittype, pp)
+    render_summary_table_page(samples, pars_map, fittype, pp)
 
     pp.close()
     logging.info(f"Successfully generated all diagnostic figures in {pdf_plot}")
