@@ -33,7 +33,7 @@ Key Architecture & User Ergonomics:
    Ring models inherit identical ring prior boundaries from `COMMON_RING_PRIORS`.
    Modifying `COMMON_RING_PRIORS` automatically propagates to those model profiles,
    preserving Bayesian evidence comparability and Bayes factors across models.
-   Ring-free models (`simgauss`, `resid_gauss3blob`) do not use `COMMON_RING_PRIORS`.
+   Ring-free models (`simgauss`, `resid_gauss1blob`, `resid_gauss3blob`) do not use `COMMON_RING_PRIORS`.
 
 4. Familiar Table Formatting:
    The user configuration section is styled cleanly and intuitively, matching
@@ -171,6 +171,16 @@ GAUSS3BLOB_USER_PRIORS = np.array([
     [155.0, 177.0]  # 18: Blob 3 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
+# resid_gauss1blob: One Clump on a residual map (4 parameters).
+# Disk PA, dRA, and dDec are fixed inside the model and are not sampled.
+RESID1BLOB_USER_PRIORS = np.array([
+    # Blob 1:
+    [6.030, 8.530], # 0:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 1:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [270.0, 330.0]  # 3:  Blob 1 Angle [deg] (East of North, CCW)
+], dtype=float)
+
 # resid_gauss3blob: Three Distinct Clumps on a residual map (12 parameters).
 # Disk PA, dRA, and dDec are fixed inside the model and are not sampled.
 RESID3BLOB_USER_PRIORS = np.array([
@@ -245,7 +255,15 @@ def compile_all_priors():
         b3_comp[k + 1, 1] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 1])
     gauss3blob_ranges = np.vstack([r_comp, b3_comp])
 
-    # 5. resid_gauss3blob (3 Clumps, residual map; no ring block)
+    # 5. resid_gauss1blob (1 Clump, residual map; no ring block)
+    resid1_comp = np.copy(RESID1BLOB_USER_PRIORS)
+    resid1_comp[0, 0] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 0], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
+    resid1_comp[0, 1] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 1], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
+    resid1_comp[1, 0] = sigma_to_logsigma(RESID1BLOB_USER_PRIORS[1, 0])
+    resid1_comp[1, 1] = sigma_to_logsigma(RESID1BLOB_USER_PRIORS[1, 1])
+    resid1blob_ranges = resid1_comp
+
+    # 6. resid_gauss3blob (3 Clumps, residual map; no ring block)
     resid_comp = np.copy(RESID3BLOB_USER_PRIORS)
     for k in (0, 4, 8):
         resid_comp[k, 0] = blob_peak_to_logflux(RESID3BLOB_USER_PRIORS[k, 0], sigma_bounds=RESID3BLOB_USER_PRIORS[k + 1])
@@ -254,7 +272,7 @@ def compile_all_priors():
         resid_comp[k + 1, 1] = sigma_to_logsigma(RESID3BLOB_USER_PRIORS[k + 1, 1])
     resid3blob_ranges = resid_comp
 
-    # 6. simgauss (Simulated Single Blob Test Model)
+    # 7. simgauss (Simulated Single Blob Test Model)
     sim_comp = np.copy(SIMGAUSS_USER_PRIORS)
     sim_comp[0, 0] = float(np.round(SIMGAUSS_USER_PRIORS[0, 0] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 0] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
     sim_comp[0, 1] = float(np.round(SIMGAUSS_USER_PRIORS[0, 1] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 1] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
@@ -266,6 +284,7 @@ def compile_all_priors():
         gauss1blob_ranges,
         gauss2blob_ranges,
         gauss3blob_ranges,
+        resid1blob_ranges,
         resid3blob_ranges,
         sim_comp
     )
@@ -277,6 +296,7 @@ def compile_all_priors():
     GAUSS1BLOB_PRIOR_RANGES,
     GAUSS2BLOB_PRIOR_RANGES,
     GAUSS3BLOB_PRIOR_RANGES,
+    RESID1BLOB_PRIOR_RANGES,
     RESID3BLOB_PRIOR_RANGES,
     SIMGAUSS_PRIOR_RANGES
 ) = compile_all_priors()
@@ -395,6 +415,29 @@ def twod_gauss3blob_ptform(u):
 
 
 #########################
+### Residual map + 1 Gaussian Blob (4 parameters)
+#########################
+
+def resid_gauss1blob_ptform(u):
+    """
+    Prior transform for 1 Gaussian Blob on a residual map (4 parameters).
+    Disk PA, centroid dRA, and dDec are fixed inside the model and are not sampled.
+    Blob parameters: [Blob LogFlux, Blob LogSigma, Dist, Angle].
+    Radial distance is sampled uniformly in area on the disk.
+    Angular range is set in RESID1BLOB_USER_PRIORS.
+    """
+    u = np.asarray(u)
+    v = np.empty(4, dtype=float)
+    low = RESID1BLOB_PRIOR_RANGES[:, 0]
+    high = RESID1BLOB_PRIOR_RANGES[:, 1]
+
+    v[0:2] = low[0:2] + u[0:2] * (high[0:2] - low[0:2])
+    v[2] = uniform_area_radius(u[2], low[2], high[2])
+    v[3] = low[3] + u[3] * (high[3] - low[3])
+    return v
+
+
+#########################
 ### Residual map + 3 Gaussian Blobs (12 parameters)
 #########################
 
@@ -505,6 +548,16 @@ if __name__ == "__main__":
         ("Blob 3 Azimuthal Angle (SE)", f"[{GAUSS3BLOB_USER_PRIORS[11,0]:.1f}, {GAUSS3BLOB_USER_PRIORS[11,1]:.1f}] deg", f"[{GAUSS3BLOB_PRIOR_RANGES[18,0]:.1f}, {GAUSS3BLOB_PRIOR_RANGES[18,1]:.1f}] deg"),
     ]
     for name, user_val, dyn_val in b3_labels:
+        print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
+
+    print("\nResidual 1-Blob Parameters (resid_gauss1blob; PA, dRA, dDec fixed in the model):")
+    resid1_labels = [
+        ("Blob 1 Surface Brightness", f"[{RESID1BLOB_USER_PRIORS[0,0]:.2f}, {RESID1BLOB_USER_PRIORS[0,1]:.2f}] log(Jy/sr)", f"[{RESID1BLOB_PRIOR_RANGES[0,0]:.2f}, {RESID1BLOB_PRIOR_RANGES[0,1]:.2f}] log(Jy)"),
+        ("Blob 1 Width (sigma)", f"[{RESID1BLOB_USER_PRIORS[1,0]:.2f}, {RESID1BLOB_USER_PRIORS[1,1]:.2f}] arcsec", f"[{RESID1BLOB_PRIOR_RANGES[1,0]:.3f}, {RESID1BLOB_PRIOR_RANGES[1,1]:.3f}] log(arcsec)"),
+        ("Blob 1 Radial Distance", f"[{RESID1BLOB_USER_PRIORS[2,0]:.1f}, {RESID1BLOB_USER_PRIORS[2,1]:.1f}] arcsec", f"[{RESID1BLOB_PRIOR_RANGES[2,0]:.1f}, {RESID1BLOB_PRIOR_RANGES[2,1]:.1f}] arcsec (area)"),
+        ("Blob 1 Azimuthal Angle", f"[{RESID1BLOB_USER_PRIORS[3,0]:.1f}, {RESID1BLOB_USER_PRIORS[3,1]:.1f}] deg", f"[{RESID1BLOB_PRIOR_RANGES[3,0]:.1f}, {RESID1BLOB_PRIOR_RANGES[3,1]:.1f}] deg"),
+    ]
+    for name, user_val, dyn_val in resid1_labels:
         print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
 
     print("\nResidual Blob Parameters (resid_gauss3blob; PA, dRA, dDec fixed in the model):")

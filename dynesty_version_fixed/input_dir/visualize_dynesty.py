@@ -256,7 +256,7 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         ])
 
     # 1. Ring Component (if present in model)
-    if fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss3blob'):
+    if fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss1blob', 'resid_gauss3blob'):
         # Row 1: Ring LogFlux
         q_lf = get_quantiles(res.samples[:, 0])
         add_table_row("Ring LogFlux", "log(Jy)", pt_stream.RING_PRIOR_RANGES[0, 0], pt_stream.RING_PRIOR_RANGES[0, 1],
@@ -394,6 +394,18 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
             q_ang = get_quantiles(res.samples[:, idx_base + 3])
             add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
                           pars_bf[idx_base + 3], q_ang)
+
+    elif fittype == 'resid_gauss1blob':
+        add_blob_component("B1", 0, 1,
+                           pt_stream.RESID1BLOB_PRIOR_RANGES[0],
+                           pt_stream.RESID1BLOB_USER_PRIORS[0],
+                           pt_stream.RESID1BLOB_USER_PRIORS[1])
+        q_dist = get_quantiles(res.samples[:, 2])
+        add_table_row("B1 Dist", "arcsec", pt_stream.RESID1BLOB_USER_PRIORS[2, 0], pt_stream.RESID1BLOB_USER_PRIORS[2, 1],
+                      pars_bf[2], q_dist)
+        q_ang = get_quantiles(res.samples[:, 3])
+        add_table_row("B1 Angle", "degrees", pt_stream.RESID1BLOB_USER_PRIORS[3, 0], pt_stream.RESID1BLOB_USER_PRIORS[3, 1],
+                      pars_bf[3], q_ang)
 
     elif fittype == 'resid_gauss3blob':
         for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
@@ -801,7 +813,7 @@ def main():
     mod_wcs = make_model_wcs(phase_center.ra.deg, phase_center.dec.deg, pixarcsec, shape=(numpix, numpix))
 
     # Pre-calculate celestial coordinates for the ring peak profile (white dashed ellipse)
-    has_ring = fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss3blob')
+    has_ring = fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss1blob', 'resid_gauss3blob')
     if has_ring:
         ring_rad = pars_bf[2]
         inc = np.radians(pars_bf[3])

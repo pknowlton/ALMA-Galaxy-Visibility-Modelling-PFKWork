@@ -31,7 +31,7 @@ expressed in **radians** or **arcseconds**, depending on the execution mode:
 1. `'chi2'` / `'vis'` (Fourier / Visibility domain):
    - Galario operates internally in **radians**.
    - Input parameters in `pars` are supplied in **arcseconds** by the sampler.
-   - The top-level wrapper functions (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`, `resid_gauss3blob`)
+   - The top-level wrapper functions (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`, `resid_gauss1blob`, `resid_gauss3blob`)
      automatically convert all spatial dimensions from arcseconds to **radians**
      (via multiplication by `arcsec = np.pi / (180 * 3600)`).
    - Pixel scale `dxy` is provided in **radians** (from `get_image_size`).
@@ -611,6 +611,73 @@ def twod_gauss3blob(pars, args, vis_data, version):
         return model_img
 
 #########################
+### Residuals (from best fit 3 blob model above) + 1 Gaussian Blob
+#########################
+
+def resid_gauss1blob_model(pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, nxy, dxy, version):
+    """
+    Generates a 2D image matrix of a single Gaussian cluster on a residual map.
+    """
+    xx, yy = get_grid(nxy, dxy)
+
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    if version in ("chi2", "vis"):
+        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
+        return blob1_model_jypix
+
+    elif version == 'plot':
+        xx_shifted = xx - dra
+        yy_shifted = yy - ddec
+
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+
+        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
+        return blob1_model_jysr
+
+    else:
+        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
+        logging.warning(msg)
+        raise ValueError(msg)
+
+def resid_gauss1blob(pars, args, vis_data, version):
+    """
+    Top-level model handler for 1 Gaussian Blob on a residual map (4 parameters).
+    """
+    log_flux_b1, log_sigma_b1, dist_b1, ang_b1 = pars
+    nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    posangle = 18.8479 * deg #from best fit 3blob model
+    dRA = 0.5973 #from best fit 3blob model
+    dDec = 0.5284 #from best fit 3blob model
+
+    ang_b1 *= deg
+
+    sigma_b1_arcsec = 10.0**log_sigma_b1
+    sigma_b1_rad = sigma_b1_arcsec * arcsec
+
+    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
+
+    if version in ("chi2", "vis"):
+        dRA_rad = dRA * arcsec
+        dDec_rad = dDec * arcsec
+        dist_b1_rad = dist_b1 * arcsec
+        model_img = resid_gauss1blob_model(posangle, dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1, nxy, dxy, version) 
+
+        if version == 'chi2':
+            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
+            return chi2
+        else:
+            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
+            return model_vis
+    else:
+        model_img = resid_gauss1blob_model(posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, nxy, dxy, version)
+        return model_img
+
+#########################
 ### Rediduals (from best fit 3 blob model above) + 3 Gaussian Blobs
 #########################
 
@@ -821,6 +888,8 @@ def model_prof(pars, args, vis_data, version, fittype):
         prof = twod_gauss2blob(pars, args, vis_data, version)
     elif fittype == 'twod_gauss3blob':
         prof = twod_gauss3blob(pars, args, vis_data, version)
+    elif fittype == 'resid_gauss1blob':
+        prof = resid_gauss1blob(pars, args, vis_data, version)
     elif fittype == 'resid_gauss3blob':
         prof = resid_gauss3blob(pars, args, vis_data, version)
     elif fittype in ('simgauss', 'twod_simgauss'):
@@ -857,6 +926,11 @@ def model_addon(fittype):
     elif fittype == 'twod_gauss3blob':
         label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle", "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"]
         unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
+        ndim = len(label)
+
+    elif fittype == 'resid_gauss1blob':
+        label = ["B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle"]
+        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees"]
         ndim = len(label)
 
     elif fittype == 'resid_gauss3blob':
