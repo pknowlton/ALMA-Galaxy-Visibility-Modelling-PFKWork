@@ -30,9 +30,10 @@ Key Architecture & User Ergonomics:
    overhead occurs during the nested sampling run!
 
 3. Shared Common Ring Priors:
-   All models inherit identical ring prior boundaries from `COMMON_RING_PRIORS`.
-   Modifying `COMMON_RING_PRIORS` automatically propagates to all model profiles,
+   Ring models inherit identical ring prior boundaries from `COMMON_RING_PRIORS`.
+   Modifying `COMMON_RING_PRIORS` automatically propagates to those model profiles,
    preserving Bayesian evidence comparability and Bayes factors across models.
+   Ring-free models (`simgauss`, `resid_gauss3blob`) do not use `COMMON_RING_PRIORS`.
 
 4. Familiar Table Formatting:
    The user configuration section is styled cleanly and intuitively, matching
@@ -170,23 +171,24 @@ GAUSS3BLOB_USER_PRIORS = np.array([
     [155.0, 177.0]  # 18: Blob 3 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
-# resid_gauss3blob: Three Distinct Clumps (in residual map) (12 parameters)
+# resid_gauss3blob: Three Distinct Clumps on a residual map (12 parameters).
+# Disk PA, dRA, and dDec are fixed inside the model and are not sampled.
 RESID3BLOB_USER_PRIORS = np.array([
     # Blob 1:
-    [6.030, 8.530], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
-    [0.05, 0.4],    # 8:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.0, 10.0],    # 9:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [330.0, 390.0], # 10: Blob 1 Angle [deg] (East of North, CCW)
+    [6.030, 8.530], # 0:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 1:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [330.0, 390.0], # 3:  Blob 1 Angle [deg] (East of North, CCW)
     # Blob 2:
-    [6.030, 8.530], # 11: Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
-    [0.05, 0.4],    # 12: Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.0, 10.0],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [177.0, 205.0], # 14: Blob 2 Angle [deg] (East of North, CCW)
+    [6.030, 8.530], # 4:  Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 5:  Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 6:  Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [177.0, 205.0], # 7:  Blob 2 Angle [deg] (East of North, CCW)
     # Blob 3:
-    [6.030, 8.530], # 15: Blob 3 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
-    [0.05, 0.4],    # 16: Blob 3 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.0, 10.0],    # 17: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [155.0, 177.0]  # 18: Blob 3 Angle [deg] (East of North, CCW)
+    [6.030, 8.530], # 8:  Blob 3 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 9:  Blob 3 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 10: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [155.0, 177.0]  # 11: Blob 3 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
 # simgauss: Single simulated Gaussian blob test model (7 parameters)
@@ -243,7 +245,14 @@ def compile_all_priors():
         b3_comp[k + 1, 1] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 1])
     gauss3blob_ranges = np.vstack([r_comp, b3_comp])
 
-    # 5. resid_gauss3blob (3 Clumps, residual map)
+    # 5. resid_gauss3blob (3 Clumps, residual map; no ring block)
+    resid_comp = np.copy(RESID3BLOB_USER_PRIORS)
+    for k in (0, 4, 8):
+        resid_comp[k, 0] = blob_peak_to_logflux(RESID3BLOB_USER_PRIORS[k, 0], sigma_bounds=RESID3BLOB_USER_PRIORS[k + 1])
+        resid_comp[k, 1] = blob_peak_to_logflux(RESID3BLOB_USER_PRIORS[k, 1], sigma_bounds=RESID3BLOB_USER_PRIORS[k + 1])
+        resid_comp[k + 1, 0] = sigma_to_logsigma(RESID3BLOB_USER_PRIORS[k + 1, 0])
+        resid_comp[k + 1, 1] = sigma_to_logsigma(RESID3BLOB_USER_PRIORS[k + 1, 1])
+    resid3blob_ranges = resid_comp
 
     # 6. simgauss (Simulated Single Blob Test Model)
     sim_comp = np.copy(SIMGAUSS_USER_PRIORS)
@@ -386,6 +395,40 @@ def twod_gauss3blob_ptform(u):
 
 
 #########################
+### Residual map + 3 Gaussian Blobs (12 parameters)
+#########################
+
+def resid_gauss3blob_ptform(u):
+    """
+    Prior transform for 3 Gaussian Blobs on a residual map (12 parameters).
+    Disk PA, centroid dRA, and dDec are fixed inside the model and are not sampled.
+    Blob parameters: [Blob LogFlux, Blob LogSigma, Dist, Angle] for Blobs 1, 2, and 3.
+    Radial distances are sampled uniformly in area on the disk.
+    Angular ranges are those set in RESID3BLOB_USER_PRIORS.
+    """
+    u = np.asarray(u)
+    v = np.empty(12, dtype=float)
+    low = RESID3BLOB_PRIOR_RANGES[:, 0]
+    high = RESID3BLOB_PRIOR_RANGES[:, 1]
+
+    # Blob 1
+    v[0:2] = low[0:2] + u[0:2] * (high[0:2] - low[0:2])
+    v[2] = uniform_area_radius(u[2], low[2], high[2])
+    v[3] = low[3] + u[3] * (high[3] - low[3])
+
+    # Blob 2
+    v[4:6] = low[4:6] + u[4:6] * (high[4:6] - low[4:6])
+    v[6] = uniform_area_radius(u[6], low[6], high[6])
+    v[7] = low[7] + u[7] * (high[7] - low[7])
+
+    # Blob 3
+    v[8:10] = low[8:10] + u[8:10] * (high[8:10] - low[8:10])
+    v[10] = uniform_area_radius(u[10], low[10], high[10])
+    v[11] = low[11] + u[11] * (high[11] - low[11])
+    return v
+
+
+#########################
 ### Simulated Single Gaussian Blob (7 parameters)
 #########################
 
@@ -462,6 +505,24 @@ if __name__ == "__main__":
         ("Blob 3 Azimuthal Angle (SE)", f"[{GAUSS3BLOB_USER_PRIORS[11,0]:.1f}, {GAUSS3BLOB_USER_PRIORS[11,1]:.1f}] deg", f"[{GAUSS3BLOB_PRIOR_RANGES[18,0]:.1f}, {GAUSS3BLOB_PRIOR_RANGES[18,1]:.1f}] deg"),
     ]
     for name, user_val, dyn_val in b3_labels:
+        print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
+
+    print("\nResidual Blob Parameters (resid_gauss3blob; PA, dRA, dDec fixed in the model):")
+    resid_labels = [
+        ("Blob 1 Surface Brightness", f"[{RESID3BLOB_USER_PRIORS[0,0]:.2f}, {RESID3BLOB_USER_PRIORS[0,1]:.2f}] log(Jy/sr)", f"[{RESID3BLOB_PRIOR_RANGES[0,0]:.2f}, {RESID3BLOB_PRIOR_RANGES[0,1]:.2f}] log(Jy)"),
+        ("Blob 1 Width (sigma)", f"[{RESID3BLOB_USER_PRIORS[1,0]:.2f}, {RESID3BLOB_USER_PRIORS[1,1]:.2f}] arcsec", f"[{RESID3BLOB_PRIOR_RANGES[1,0]:.3f}, {RESID3BLOB_PRIOR_RANGES[1,1]:.3f}] log(arcsec)"),
+        ("Blob 1 Radial Distance", f"[{RESID3BLOB_USER_PRIORS[2,0]:.1f}, {RESID3BLOB_USER_PRIORS[2,1]:.1f}] arcsec", f"[{RESID3BLOB_PRIOR_RANGES[2,0]:.1f}, {RESID3BLOB_PRIOR_RANGES[2,1]:.1f}] arcsec (area)"),
+        ("Blob 1 Azimuthal Angle", f"[{RESID3BLOB_USER_PRIORS[3,0]:.1f}, {RESID3BLOB_USER_PRIORS[3,1]:.1f}] deg", f"[{RESID3BLOB_PRIOR_RANGES[3,0]:.1f}, {RESID3BLOB_PRIOR_RANGES[3,1]:.1f}] deg"),
+        ("Blob 2 Surface Brightness", f"[{RESID3BLOB_USER_PRIORS[4,0]:.2f}, {RESID3BLOB_USER_PRIORS[4,1]:.2f}] log(Jy/sr)", f"[{RESID3BLOB_PRIOR_RANGES[4,0]:.2f}, {RESID3BLOB_PRIOR_RANGES[4,1]:.2f}] log(Jy)"),
+        ("Blob 2 Width (sigma)", f"[{RESID3BLOB_USER_PRIORS[5,0]:.2f}, {RESID3BLOB_USER_PRIORS[5,1]:.2f}] arcsec", f"[{RESID3BLOB_PRIOR_RANGES[5,0]:.3f}, {RESID3BLOB_PRIOR_RANGES[5,1]:.3f}] log(arcsec)"),
+        ("Blob 2 Radial Distance", f"[{RESID3BLOB_USER_PRIORS[6,0]:.1f}, {RESID3BLOB_USER_PRIORS[6,1]:.1f}] arcsec", f"[{RESID3BLOB_PRIOR_RANGES[6,0]:.1f}, {RESID3BLOB_PRIOR_RANGES[6,1]:.1f}] arcsec (area)"),
+        ("Blob 2 Azimuthal Angle", f"[{RESID3BLOB_USER_PRIORS[7,0]:.1f}, {RESID3BLOB_USER_PRIORS[7,1]:.1f}] deg", f"[{RESID3BLOB_PRIOR_RANGES[7,0]:.1f}, {RESID3BLOB_PRIOR_RANGES[7,1]:.1f}] deg"),
+        ("Blob 3 Surface Brightness", f"[{RESID3BLOB_USER_PRIORS[8,0]:.2f}, {RESID3BLOB_USER_PRIORS[8,1]:.2f}] log(Jy/sr)", f"[{RESID3BLOB_PRIOR_RANGES[8,0]:.2f}, {RESID3BLOB_PRIOR_RANGES[8,1]:.2f}] log(Jy)"),
+        ("Blob 3 Width (sigma)", f"[{RESID3BLOB_USER_PRIORS[9,0]:.2f}, {RESID3BLOB_USER_PRIORS[9,1]:.2f}] arcsec", f"[{RESID3BLOB_PRIOR_RANGES[9,0]:.3f}, {RESID3BLOB_PRIOR_RANGES[9,1]:.3f}] log(arcsec)"),
+        ("Blob 3 Radial Distance", f"[{RESID3BLOB_USER_PRIORS[10,0]:.1f}, {RESID3BLOB_USER_PRIORS[10,1]:.1f}] arcsec", f"[{RESID3BLOB_PRIOR_RANGES[10,0]:.1f}, {RESID3BLOB_PRIOR_RANGES[10,1]:.1f}] arcsec (area)"),
+        ("Blob 3 Azimuthal Angle", f"[{RESID3BLOB_USER_PRIORS[11,0]:.1f}, {RESID3BLOB_USER_PRIORS[11,1]:.1f}] deg", f"[{RESID3BLOB_PRIOR_RANGES[11,0]:.1f}, {RESID3BLOB_PRIOR_RANGES[11,1]:.1f}] deg"),
+    ]
+    for name, user_val, dyn_val in resid_labels:
         print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
 
     print("=" * 80)

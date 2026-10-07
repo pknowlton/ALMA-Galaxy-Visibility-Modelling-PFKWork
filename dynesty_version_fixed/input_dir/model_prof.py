@@ -31,7 +31,7 @@ expressed in **radians** or **arcseconds**, depending on the execution mode:
 1. `'chi2'` / `'vis'` (Fourier / Visibility domain):
    - Galario operates internally in **radians**.
    - Input parameters in `pars` are supplied in **arcseconds** by the sampler.
-   - The top-level wrapper functions (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`)
+   - The top-level wrapper functions (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`, `resid_gauss3blob`)
      automatically convert all spatial dimensions from arcseconds to **radians**
      (via multiplication by `arcsec = np.pi / (180 * 3600)`).
    - Pixel scale `dxy` is provided in **radians** (from `get_image_size`).
@@ -821,6 +821,8 @@ def model_prof(pars, args, vis_data, version, fittype):
         prof = twod_gauss2blob(pars, args, vis_data, version)
     elif fittype == 'twod_gauss3blob':
         prof = twod_gauss3blob(pars, args, vis_data, version)
+    elif fittype == 'resid_gauss3blob':
+        prof = resid_gauss3blob(pars, args, vis_data, version)
     elif fittype in ('simgauss', 'twod_simgauss'):
         prof = twod_simgauss(pars, args, vis_data, version)
     else:
@@ -855,6 +857,11 @@ def model_addon(fittype):
     elif fittype == 'twod_gauss3blob':
         label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle", "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"]
         unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
+        ndim = len(label)
+
+    elif fittype == 'resid_gauss3blob':
+        label = ["B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle", "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"]
+        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
         ndim = len(label)
 
     elif fittype in ('simgauss', 'twod_simgauss'):
