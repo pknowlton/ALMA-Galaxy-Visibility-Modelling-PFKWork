@@ -178,17 +178,17 @@ RESID3BLOB_USER_PRIORS = np.array([
     [6.030, 8.530], # 0:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 1:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
     [4.0, 10.0],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [330.0, 390.0], # 3:  Blob 1 Angle [deg] (East of North, CCW)
+    [330.0, 360.0], # 3:  Blob 1 Angle [deg] (East of North, CCW)
     # Blob 2:
     [6.030, 8.530], # 4:  Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 5:  Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
     [4.0, 10.0],    # 6:  Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [177.0, 205.0], # 7:  Blob 2 Angle [deg] (East of North, CCW)
+    [270.0, 330.0], # 7:  Blob 2 Angle [deg] (East of North, CCW)
     # Blob 3:
     [6.030, 8.530], # 8:  Blob 3 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 9:  Blob 3 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
     [4.0, 10.0],    # 10: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [155.0, 177.0]  # 11: Blob 3 Angle [deg] (East of North, CCW)
+    [140.0, 165.0]  # 11: Blob 3 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
 # simgauss: Single simulated Gaussian blob test model (7 parameters)
