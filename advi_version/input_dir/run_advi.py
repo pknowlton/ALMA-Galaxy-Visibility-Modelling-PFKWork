@@ -373,8 +373,8 @@ def main():
                         help="Relative ELBO convergence tolerance, matching Stan's tol_rel_obj (default: 0.001).")
     parser.add_argument("--draws", type=int, default=5000,
                         help="Number of posterior samples to draw from fitted variational distribution (default: 5000).")
-    parser.add_argument("--workers", type=int, default=16,
-                        help="Number of parallel worker processes for finite-difference evaluation (default: 16).")
+    parser.add_argument("--workers", type=int, default=8,
+                        help="Number of parallel worker processes for finite-difference evaluation (default: 8).")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducibility (default: 42).")
     parser.add_argument("--resume", action="store_true", default=True,

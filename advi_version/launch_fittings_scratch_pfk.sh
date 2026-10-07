@@ -76,10 +76,15 @@ ls casa_dir_freq
 echo "Starting ADVI run at $(date)"
 
 # Step 4a: Run ADVI optimization to fit the model to UV visibilities
-conda run -n pk_env_38 python run_advi.py $4
+#conda run -n pk_env_38 python run_advi.py $4
 
 # Step 4b: Run post-processing to generate diagnostic plots and PDFs
-conda run -n pk_env_38 python visualize_advi.py $4
+#conda run -n pk_env_38 python visualize_advi.py $4
+
+conda run --no-capture-output -n pk_env_38 python -u run_advi.py $4
+mkdir -p "${OUT_DIR}"
+cp -a "${STAGING_DIR}/output/." "${OUT_DIR}/"
+conda run --no-capture-output -n pk_env_38 python -u visualize_advi.py $4
 
 EXIT_CODE=$?
 

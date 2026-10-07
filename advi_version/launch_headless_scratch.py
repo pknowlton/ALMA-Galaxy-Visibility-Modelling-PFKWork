@@ -47,8 +47,8 @@ fittype = pargs.fittype
 # ------------------------------------------------------------------------------
 # CANFAR Skaha Headless Session Configuration
 # ------------------------------------------------------------------------------
-cores = 16                                 # CPU cores allocated for multiprocessing pool
-mem = None                                 # Default memory allocation (MB)
+cores = 8                                 # CPU cores allocated for multiprocessing pool
+mem = 64                                 # Default memory allocation (MB)
 out_dir_full = os.path.join(out_dir, name) # Target directory where results will be preserved
 image = 'images.canfar.net/skaha/astroml:latest' # Docker container image with astronomical tools
 

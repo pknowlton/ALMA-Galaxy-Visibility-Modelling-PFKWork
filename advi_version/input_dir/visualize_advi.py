@@ -548,12 +548,12 @@ def main():
         truths=pars_bf,
         truth_color='forestgreen'
     )
-    overlay_corner_marginal_lines(fig_corner, ndim, pars_map, color='crimson', linestyle='-', linewidth=1.8)
+    #overlay_corner_marginal_lines(fig_corner, ndim, pars_map, color='crimson', linestyle='-', linewidth=1.8)
     from matplotlib.lines import Line2D
     fig_corner.legend(
         handles=[
             Line2D([0], [0], color='forestgreen', lw=2, label='Posterior median (best fit)'),
-            Line2D([0], [0], color='crimson', lw=2, label='Joint MAP'),
+            #Line2D([0], [0], color='crimson', lw=2, label='Joint MAP'),
         ],
         loc='upper right',
         fontsize=10,
