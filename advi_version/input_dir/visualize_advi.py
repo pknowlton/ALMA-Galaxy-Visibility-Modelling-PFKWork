@@ -536,10 +536,16 @@ def main():
     plt.close(fig_elbo)
     logging.info('Successfully saved the ELBO convergence summary plot...')
 
-    # Corner plot
+    # Corner plot. A 19-parameter figure saved from every posterior draw at
+    # 300 dpi exhausts the container during the 3-blob model. Contours are
+    # drawn from a fixed 1000-draw subset; the results table and best-fit
+    # model still use the full posterior.
     disp_labels = [f"{l}\n[{u}]" for l, u in zip(labels, units)]
+    rng = np.random.default_rng(42)
+    n_corner = min(1000, len(samples))
+    corner_samples = samples[rng.choice(len(samples), n_corner, replace=False)]
     fig_corner = corner.corner(
-        samples,
+        corner_samples,
         labels=disp_labels,
         quantiles=[0.15865, 0.5, 0.84135],
         show_titles=True,
@@ -559,7 +565,7 @@ def main():
         fontsize=10,
         frameon=True,
     )
-    pp.savefig(fig_corner, dpi=300)
+    pp.savefig(fig_corner, dpi=100)
     plt.close(fig_corner)
     logging.info('Successfully saved the corner plot...')
 
