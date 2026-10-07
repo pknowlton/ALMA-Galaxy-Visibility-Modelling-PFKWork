@@ -55,8 +55,7 @@ def dynest_radec(pars, fittype):
     pars : array_like
         Best-fit model parameters.
     fittype : str
-        Model identifier: 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss1blob_2peak',
-        'twod_gauss1blob_2peak_dp', 'twod_gauss2blob', or 'twod_gauss3blob'.
+        Model identifier: 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob', or 'twod_gauss3blob'.
 
     Returns
     -------
@@ -88,37 +87,6 @@ def dynest_radec(pars, fittype):
         radec_b1 = ngc3351.directional_offset_by(position_angle=sky_ang_b1, separation=sep_b1)
         dynest_coords[0, 0] = radec_b1.ra.deg
         dynest_coords[0, 1] = radec_b1.dec.deg
-
-    elif fittype == 'twod_gauss1blob_2peak':
-        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b11, log_sigma_b11, log_flux_b12, log_sigma_b12, dist_b1, ang_b1 = pars
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((1, 2))
-
-        sky_ang_b1 = (posangle + ang_b1) * u.deg
-        sep_b1 = dist_b1 * u.arcsecond
-
-        radec_b1 = ngc3351.directional_offset_by(position_angle=sky_ang_b1, separation=sep_b1)
-        dynest_coords[0, 0] = radec_b1.ra.deg
-        dynest_coords[0, 1] = radec_b1.dec.deg
-
-    elif fittype == 'twod_gauss1blob_2peak_dp':
-        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b11, log_sigma_b11, dist_b11, ang_b11, log_flux_b12, log_sigma_b12, dist_b12, ang_b12 = pars
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((2, 2))
-
-        # Peak 1 relative to galaxy center
-        sky_ang_b11 = (posangle + ang_b11) * u.deg
-        sep_b11 = dist_b11 * u.arcsecond
-        radec_b11 = ngc3351.directional_offset_by(position_angle=sky_ang_b11, separation=sep_b11)
-        dynest_coords[0, 0] = radec_b11.ra.deg
-        dynest_coords[0, 1] = radec_b11.dec.deg
-
-        # Peak 2 relative to Peak 1
-        sky_ang_b12 = (posangle + ang_b12) * u.deg
-        sep_b12 = dist_b12 * u.arcsecond
-        radec_b12 = radec_b11.directional_offset_by(position_angle=sky_ang_b12, separation=sep_b12)
-        dynest_coords[1, 0] = radec_b12.ra.deg
-        dynest_coords[1, 1] = radec_b12.dec.deg
 
     elif fittype == 'twod_gauss2blob':
         log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2 = pars

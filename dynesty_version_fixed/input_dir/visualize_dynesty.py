@@ -365,49 +365,6 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         add_table_row("B1 Angle", "degrees", pt_stream.GAUSS1BLOB_USER_PRIORS[3, 0], pt_stream.GAUSS1BLOB_USER_PRIORS[3, 1],
                       pars_bf[10], q_ang)
 
-    elif fittype == 'twod_gauss1blob_2peak':
-        # Core
-        add_blob_component("B11 (Core)", 7, 8,
-                           pt_stream.GAUSS1BLOB_2PEAK_PRIOR_RANGES[7],
-                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[0],
-                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[1])
-        # Envelope
-        add_blob_component("B12 (Env)", 9, 10,
-                           pt_stream.GAUSS1BLOB_2PEAK_PRIOR_RANGES[9],
-                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[2],
-                           pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[3])
-        q_dist = get_quantiles(res.samples[:, 11])
-        add_table_row("Dist", "arcsec", pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[4, 0], pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[4, 1],
-                      pars_bf[11], q_dist)
-        q_ang = get_quantiles(res.samples[:, 12])
-        add_table_row("Angle", "degrees", pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[5, 0], pt_stream.GAUSS1BLOB_2PEAK_USER_PRIORS[5, 1],
-                      pars_bf[12], q_ang)
-
-    elif fittype == 'twod_gauss1blob_2peak_dp':
-        # Peak 1
-        add_blob_component("B11 (Peak 1)", 7, 8,
-                           pt_stream.GAUSS1BLOB_2PEAK_DP_PRIOR_RANGES[7],
-                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[0],
-                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[1])
-        q_d1 = get_quantiles(res.samples[:, 9])
-        add_table_row("Dist 1", "arcsec", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[2, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[2, 1],
-                      pars_bf[9], q_d1)
-        q_a1 = get_quantiles(res.samples[:, 10])
-        add_table_row("Angle 1", "degrees", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[3, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[3, 1],
-                      pars_bf[10], q_a1)
-
-        # Peak 2
-        add_blob_component("B12 (Peak 2)", 11, 12,
-                           pt_stream.GAUSS1BLOB_2PEAK_DP_PRIOR_RANGES[11],
-                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[4],
-                           pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[5])
-        q_d2 = get_quantiles(res.samples[:, 13])
-        add_table_row("Dist 2", "arcsec", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[6, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[6, 1],
-                      pars_bf[13], q_d2)
-        q_a2 = get_quantiles(res.samples[:, 14])
-        add_table_row("Angle 2", "degrees", pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[7, 0], pt_stream.GAUSS1BLOB_2PEAK_DP_USER_PRIORS[7, 1],
-                      pars_bf[14], q_a2)
-
     elif fittype == 'twod_gauss2blob':
         for k, name in [(1, 'B1'), (2, 'B2')]:
             idx_base = 7 + (k - 1) * 4

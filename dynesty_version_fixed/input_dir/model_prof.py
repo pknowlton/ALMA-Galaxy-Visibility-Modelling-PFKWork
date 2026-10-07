@@ -31,7 +31,7 @@ expressed in **radians** or **arcseconds**, depending on the execution mode:
 1. `'chi2'` / `'vis'` (Fourier / Visibility domain):
    - Galario operates internally in **radians**.
    - Input parameters in `pars` are supplied in **arcseconds** by the sampler.
-   - The top-level wrapper functions (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss1blob_2peak`, `twod_gauss1blob_2peak_dp`, `twod_gauss2blob`, `twod_gauss3blob`)
+   - The top-level wrapper functions (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`)
      automatically convert all spatial dimensions from arcseconds to **radians**
      (via multiplication by `arcsec = np.pi / (180 * 3600)`).
    - Pixel scale `dxy` is provided in **radians** (from `get_image_size`).
@@ -139,45 +139,6 @@ def gaussblob_prof(peak, sigma, xx, yy, xoff, yoff, dxy):
         2D array of flux or intensity values for the cluster component.
     """
     return 10**peak * np.exp((-1/2) * (((xx-xoff)/sigma)**2 + ((yy-yoff)/sigma)**2)) * (dxy**2)
-
-def gaussblob_2peak_prof(peak1, sigma1, peak2, sigma2, xx, yy, xoff, yoff, dxy):
-    """
-    Computes the 2D surface brightness of a two-component (composite) Gaussian cluster/blob.
-
-    Represents a localized emission knot modeled as the sum of two concentric Gaussian
-    components with distinct peak intensities and standard deviations (sigmas):
-        $I(x, y) = \left( 10^{\text{peak}_1} \cdot \exp\left( -\frac{1}{2} \left[ \left(\frac{x - x_{\text{off}}}{\sigma_1}\right)^2 + \left(\frac{y - y_{\text{off}}}{\sigma_1}\right)^2 \right] \right) + 10^{\text{peak}_2} \cdot \exp\left( -\frac{1}{2} \left[ \left(\frac{x - x_{\text{off}}}{\sigma_2}\right)^2 + \left(\frac{y - y_{\text{off}}}{\sigma_2}\right)^2 \right] \right) \right) \cdot \text{dxy}^2$
-
-    Parameters
-    ----------
-    peak1 : float
-        Base-10 logarithm of the first component peak surface brightness in Jy/sr.
-    sigma1 : float
-        Gaussian standard deviation (sigma) of the first component.
-    peak2 : float
-        Base-10 logarithm of the second component peak surface brightness in Jy/sr.
-    sigma2 : float
-        Gaussian standard deviation (sigma) of the second component.
-    xx : numpy.ndarray
-        2D meshgrid array of X coordinates, in **radians** or **arcseconds**.
-    yy : numpy.ndarray
-        2D meshgrid array of Y coordinates, in **radians** or **arcseconds**.
-    xoff : float
-        X-axis offset of the composite cluster center from origin, in matching units (**radians** or **arcseconds**).
-    yoff : float
-        Y-axis offset of the composite cluster center from origin, in matching units (**radians** or **arcseconds**).
-    dxy : float
-        Pixel scale (angular size per pixel in radians for `'chi2'`/`'vis'`, or 1 for direct surface brightness in `'plot'`).
-
-    Returns
-    -------
-    numpy.ndarray
-        2D array of flux or intensity values for the two-component cluster.
-    """
-    g1 = 10**peak1 * np.exp((-1/2) * (((xx-xoff)/sigma1)**2 + ((yy-yoff)/sigma1)**2)) * (dxy**2)
-    g2 = 10**peak2 * np.exp((-1/2) * (((xx-xoff)/sigma2)**2 + ((yy-yoff)/sigma2)**2)) * (dxy**2)
-    
-    return g1 + g2
 
 def ring_flux_to_peak(log_flux_jy, sigma_rad, rad_rad, inc_rad):
     """
@@ -460,187 +421,6 @@ def twod_gauss1blob(pars, args, vis_data, version):
         return model_img
 
 #########################
-### 2D Gaussian Ring + 1 Gaussian Blob (2 Concentric Peaks)
-#########################
-
-def twod_gauss1blob_2peak_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b11, sigma_b11, peak_b12, sigma_b12, dist_b1, ang_b1, nxy, dxy, version):
-    """
-    Generates a 2D image matrix of an inclined Gaussian ring plus 1 composite 2-peak Gaussian cluster.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    # Calculate Cartesian offsets for Blob 1 (East: xdot > 0, North: ydot > 0)
-    xdot_b1 = dist_b1 * np.sin(ang_b1)
-    ydot_b1 = dist_b1 * np.cos(ang_b1)
-
-    if version in ("chi2", "vis"):
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
-        blob1_model_jypix = gaussblob_2peak_prof(peak_b11, sigma_b11, peak_b12, sigma_b12, xx, yy, xdot_b1, ydot_b1, dxy)
-
-        return ring_model_jypix + blob1_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1)
-        blob_model_jysr = gaussblob_2peak_prof(peak_b11, sigma_b11, peak_b12, sigma_b12, xpa, ypa, xdot_b1, ydot_b1, 1)
-
-        return ring_model_jysr + blob_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_gauss1blob_2peak(pars, args, vis_data, version):
-    """
-    Top-level model handler for 2D Gaussian Ring + 1 Gaussian Blob with 2 Peaks (13 parameters).
-    """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b11, log_sigma_b11, log_flux_b12, log_sigma_b12, dist_b1, ang_b1 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    inclination *= deg
-    posangle *= deg
-    ang_b1 *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_b11_arcsec = 10.0**log_sigma_b11
-    sigma_b12_arcsec = 10.0**log_sigma_b12
-
-    sigma_rad = sigma_arcsec * arcsec
-    sigma_b11_rad = sigma_b11_arcsec * arcsec
-    sigma_b12_rad = sigma_b12_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
-    peak_b11 = blob_flux_to_peak(log_flux_b11, sigma_b11_rad)
-    peak_b12 = blob_flux_to_peak(log_flux_b12, sigma_b12_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b1_rad = dist_b1 * arcsec
-        model_img = twod_gauss1blob_2peak_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, peak_b11, sigma_b11_rad, peak_b12, sigma_b12_rad, dist_b1_rad, ang_b1, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gauss1blob_2peak_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11_arcsec, peak_b12, sigma_b12_arcsec, dist_b1, ang_b1, nxy, dxy, version)
-        return model_img
-
-#########################
-### 2D Gaussian Ring + 1 Gaussian Blob (2 Peaks, Double Pendulum)
-#########################
-
-def twod_gauss1blob_2peak_dp_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b11, sigma_b11, dist_b11, ang_b11, peak_b12, sigma_b12, dist_b12, ang_b12, nxy, dxy, version):
-    """
-    Constructs a 2D intensity grid for a tilted Gaussian ring with a 2-peak "Double Pendulum" clump.
-
-    Peak 1 is positioned at polar coordinates (dist_b11, ang_b11) relative to the galaxy center.
-    Peak 2 is positioned at relative polar coordinates (dist_b12, ang_b12) with respect to Peak 1.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    # Calculate Cartesian offsets for Blob 1 Peak 1 (East: xdot > 0, North: ydot > 0)
-    xdot_b11 = dist_b11 * np.sin(ang_b11)
-    ydot_b11 = dist_b11 * np.cos(ang_b11)
-
-    # Calculate extra Cartesian offsets for Blob 1 Peak 2 (relative to Peak 1)
-    xdot_b12 = dist_b12 * np.sin(ang_b12)
-    ydot_b12 = dist_b12 * np.cos(ang_b12)
-    xdot_bdp = xdot_b11 + xdot_b12
-    ydot_bdp = ydot_b11 + ydot_b12
-
-    if version in ("chi2", "vis"):
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
-        blob11_model_jypix = gaussblob_prof(peak_b11, sigma_b11, xx, yy, xdot_b11, ydot_b11, dxy)
-        blob12_model_jypix = gaussblob_prof(peak_b12, sigma_b12, xx, yy, xdot_bdp, ydot_bdp, dxy)
-
-        return ring_model_jypix + blob11_model_jypix + blob12_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1)
-        blob11_model_jysr = gaussblob_prof(peak_b11, sigma_b11, xpa, ypa, xdot_b11, ydot_b11, 1)
-        blob12_model_jysr = gaussblob_prof(peak_b12, sigma_b12, xpa, ypa, xdot_bdp, ydot_bdp, 1)
-
-        return ring_model_jysr + blob11_model_jysr + blob12_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_gauss1blob_2peak_dp(pars, args, vis_data, version):
-    """
-    Top-level model handler for 2D Gaussian Ring + 1 Gaussian Blob with 2 Peaks (Double Pendulum, 15 parameters).
-    """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b11, log_sigma_b11, dist_b11, ang_b11, log_flux_b12, log_sigma_b12, dist_b12, ang_b12 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    inclination *= deg
-    posangle *= deg
-    ang_b11 *= deg
-    ang_b12 *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_b11_arcsec = 10.0**log_sigma_b11
-    sigma_b12_arcsec = 10.0**log_sigma_b12
-
-    sigma_rad = sigma_arcsec * arcsec
-    sigma_b11_rad = sigma_b11_arcsec * arcsec
-    sigma_b12_rad = sigma_b12_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
-    peak_b11 = blob_flux_to_peak(log_flux_b11, sigma_b11_rad)
-    peak_b12 = blob_flux_to_peak(log_flux_b12, sigma_b12_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b11_rad = dist_b11 * arcsec
-        dist_b12_rad = dist_b12 * arcsec
-        model_img = twod_gauss1blob_2peak_dp_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, peak_b11, sigma_b11_rad, dist_b11_rad, ang_b11, peak_b12, sigma_b12_rad, dist_b12_rad, ang_b12, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gauss1blob_2peak_dp_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, peak_b11, sigma_b11_arcsec, dist_b11, ang_b11, peak_b12, sigma_b12_arcsec, dist_b12, ang_b12, nxy, dxy, version)
-        return model_img
-
-#########################
 ### 2D Gaussian Ring + 2 Gaussian Blobs
 #########################
 
@@ -831,6 +611,96 @@ def twod_gauss3blob(pars, args, vis_data, version):
         return model_img
 
 #########################
+### Rediduals (from best fit 3 blob model above) + 3 Gaussian Blobs
+#########################
+
+def resid_gauss3blob_model(pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy, version):
+    """
+    Generates a 2D image matrix of and distinct Gaussian clusters.
+    """
+    xx, yy = get_grid(nxy, dxy)
+
+    xdot_b1 = dist_b1 * np.sin(ang_b1)
+    ydot_b1 = dist_b1 * np.cos(ang_b1)
+
+    xdot_b2 = dist_b2 * np.sin(ang_b2)
+    ydot_b2 = dist_b2 * np.cos(ang_b2)
+
+    xdot_b3 = dist_b3 * np.sin(ang_b3)
+    ydot_b3 = dist_b3 * np.cos(ang_b3)
+
+    if version in ("chi2", "vis"):
+        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
+        blob2_model_jypix = gaussblob_prof(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
+        blob3_model_jypix = gaussblob_prof(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
+
+        return blob1_model_jypix + blob2_model_jypix + blob3_model_jypix
+
+    elif version == 'plot':
+        xx_shifted = xx - dra
+        yy_shifted = yy - ddec
+
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+
+        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
+        blob2_model_jysr = gaussblob_prof(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2, 1)
+        blob3_model_jysr = gaussblob_prof(peak_b3, sigma_b3, xpa, ypa, xdot_b3, ydot_b3, 1)
+
+        return blob1_model_jysr + blob2_model_jysr + blob3_model_jysr
+
+    else:
+        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
+        logging.warning(msg)
+        raise ValueError(msg)
+
+def resid_gauss3blob(pars, args, vis_data, version):
+    """
+    Top-level model handler for 3 Gaussian Blobs (12 parameters).
+    """
+    log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars
+    nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    posangle = 18.8479 * deg #from best fit 3blob model
+    dRA = 0.5973 #from best fit 3blob model
+    dDec = 0.5284 #from best fit 3blob model
+
+    ang_b1 *= deg
+    ang_b2 *= deg
+    ang_b3 *= deg
+
+    sigma_b1_arcsec = 10.0**log_sigma_b1
+    sigma_b2_arcsec = 10.0**log_sigma_b2
+    sigma_b3_arcsec = 10.0**log_sigma_b3
+
+    sigma_b1_rad = sigma_b1_arcsec * arcsec
+    sigma_b2_rad = sigma_b2_arcsec * arcsec
+    sigma_b3_rad = sigma_b3_arcsec * arcsec
+
+    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
+    peak_b2 = blob_flux_to_peak(log_flux_b2, sigma_b2_rad)
+    peak_b3 = blob_flux_to_peak(log_flux_b3, sigma_b3_rad)
+
+    if version in ("chi2", "vis"):
+        dRA_rad = dRA * arcsec
+        dDec_rad = dDec * arcsec
+        dist_b1_rad = dist_b1 * arcsec
+        dist_b2_rad = dist_b2 * arcsec
+        dist_b3_rad = dist_b3 * arcsec
+        model_img = resid_gauss3blob_model(posangle, dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1, peak_b2, sigma_b2_rad, dist_b2_rad, ang_b2, peak_b3, sigma_b3_rad, dist_b3_rad, ang_b3, nxy, dxy, version) 
+
+        if version == 'chi2':
+            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
+            return chi2
+        else:
+            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
+            return model_vis
+    else:
+        model_img = resid_gauss3blob_model(posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, peak_b2, sigma_b2_arcsec, dist_b2, ang_b2, peak_b3, sigma_b3_arcsec, dist_b3, ang_b3, nxy, dxy, version)
+        return model_img
+
+#########################
 ### Simulated Single Gaussian Blob (7 parameters)
 #########################
 
@@ -947,10 +817,6 @@ def model_prof(pars, args, vis_data, version, fittype):
         prof = twod_gaussring(pars, args, vis_data, version)
     elif fittype == 'twod_gauss1blob':
         prof = twod_gauss1blob(pars, args, vis_data, version)
-    elif fittype == 'twod_gauss1blob_2peak':
-        prof = twod_gauss1blob_2peak(pars, args, vis_data, version)
-    elif fittype == 'twod_gauss1blob_2peak_dp':
-        prof = twod_gauss1blob_2peak_dp(pars, args, vis_data, version)
     elif fittype == 'twod_gauss2blob':
         prof = twod_gauss2blob(pars, args, vis_data, version)
     elif fittype == 'twod_gauss3blob':
@@ -979,16 +845,6 @@ def model_addon(fittype):
     elif fittype == 'twod_gauss1blob':
         label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle"]
         unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-    
-    elif fittype == 'twod_gauss1blob_2peak':
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B11 LogFlux", "B11 LogSigma", "B12 LogFlux", "B12 LogSigma", "Dist", "Angle"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype == 'twod_gauss1blob_2peak_dp':
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B11 LogFlux", "B11 LogSigma", "Dist 1", "Angle 1", "B12 LogFlux", "B12 LogSigma", "Dist 2", "Angle 2"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
         ndim = len(label)
 
     elif fittype == 'twod_gauss2blob':
