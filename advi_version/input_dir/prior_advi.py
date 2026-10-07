@@ -89,7 +89,7 @@ GAUSS2BLOB_USER_PRIORS = np.array([
     # Blob 2: South-West clump (YMC 17/18 complex)
     [6.030, 8.530], # 11: Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 12: Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.0, 10.0],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [4.0, 7.5],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
     [177.0, 205.0]  # 14: Blob 2 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
@@ -103,12 +103,12 @@ GAUSS3BLOB_USER_PRIORS = np.array([
     # Blob 2: South-West clump (YMC 17/18 complex, disk angle ~182-185 deg)
     [6.030, 8.530], # 11: Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 12: Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.0, 10.0],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [4.0, 7.5],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
     [177.0, 205.0], # 14: Blob 2 Angle [deg] (East of North, CCW)
     # Blob 3: South-East clump (YMC 15 complex, disk angle ~171 deg)
     [6.030, 8.530], # 15: Blob 3 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 16: Blob 3 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.0, 10.0],    # 17: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [4.0, 7.5],    # 17: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
     [155.0, 177.0]  # 18: Blob 3 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
