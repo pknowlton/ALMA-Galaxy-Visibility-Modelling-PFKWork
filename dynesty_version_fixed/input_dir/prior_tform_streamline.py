@@ -178,7 +178,7 @@ RESID1BLOB_USER_PRIORS = np.array([
     [6.030, 8.530], # 0:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 1:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
     [4.0, 10.0],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [270.0, 330.0]  # 3:  Blob 1 Angle [deg] (East of North, CCW)
+    [140.0, 165.0]  # 3:  Blob 1 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
 # resid_gauss3blob: Three Distinct Clumps on a residual map (12 parameters).
