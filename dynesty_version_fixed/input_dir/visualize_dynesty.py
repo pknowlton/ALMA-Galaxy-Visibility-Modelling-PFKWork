@@ -171,15 +171,19 @@ def convolve_model_with_beam(model_2d, bmaj_deg, bmin_deg, bpa_deg, pixarcsec):
     convolved = convolve_fft(model_2d, beam_kernel, normalize_kernel=True)
     return convolved
 
-def safe_add_beam(ax, header=None, frame=False, color='white', corner='bottom left'):
+def safe_add_beam(ax, header=None, frame=False, color='white', corner='bottom left', fill=True, linestyle='-', linewidth=1.5):
     """
     Safely adds a synthesised restoring beam patch to a celestial WCSAxes subplot.
+    Supports filled or outlined (e.g. dotted) ellipses.
     """
     if header is None or 'BMAJ' not in header:
         return
     if add_beam is not None:
         try:
-            add_beam(ax, header=header, frame=frame, color=color, corner=corner)
+            if fill:
+                add_beam(ax, header=header, frame=frame, color=color, corner=corner)
+            else:
+                add_beam(ax, header=header, frame=frame, corner=corner, fill=False, edgecolor=color, linestyle=linestyle, linewidth=linewidth)
             return
         except Exception as e:
             logging.warning(f"Could not add beam to axis: {e}")
@@ -196,8 +200,12 @@ def safe_add_beam(ax, header=None, frame=False, color='white', corner='bottom le
         ylim = ax.get_ylim()
         x0 = min(xlim) + 0.1 * abs(xlim[1] - xlim[0])
         y0 = min(ylim) + 0.1 * abs(ylim[1] - ylim[0])
-        beam_patch = Ellipse((x0, y0), width=bmin_pix, height=bmaj_pix, angle=bpa_deg,
-                             edgecolor=color, facecolor=color, alpha=0.8)
+        if fill:
+            beam_patch = Ellipse((x0, y0), width=bmin_pix, height=bmaj_pix, angle=bpa_deg,
+                                 edgecolor=color, facecolor=color, alpha=0.8, linestyle=linestyle, linewidth=linewidth)
+        else:
+            beam_patch = Ellipse((x0, y0), width=bmin_pix, height=bmaj_pix, angle=bpa_deg,
+                                 edgecolor=color, facecolor='none', fill=False, linestyle=linestyle, linewidth=linewidth)
         ax.add_patch(beam_patch)
     except Exception as e:
         logging.warning(f"Could not add fallback beam patch: {e}")
@@ -820,121 +828,30 @@ def main():
         pa = np.radians(pars_bf[4])
         dRA = pars_bf[5]
         dDec = pars_bf[6]
-
-        theta_ellipse = np.linspace(0, 2 * np.pi, 500)
-        x_pa = ring_rad * np.cos(inc) * np.sin(theta_ellipse)
-        y_pa = ring_rad * np.cos(theta_ellipse)
-
-        x_shifted = x_pa * np.cos(pa) + y_pa * np.sin(pa)
-        y_shifted = -x_pa * np.sin(pa) + y_pa * np.cos(pa)
-
-        ngc3351_center = phase_center.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        ellipse_sky = ngc3351_center.spherical_offsets_by(x_shifted * u.arcsec, y_shifted * u.arcsec)
-        ellipse_ra = ellipse_sky.ra.deg
-        ellipse_dec = ellipse_sky.dec.deg
     else:
-        ellipse_ra, ellipse_dec = None, None
+        ring_rad = 6.3107
+        inc = np.radians(56.4047)
+        pa = np.radians(18.8479)
+        dRA = 0.5973
+        dDec = 0.5284
+
+    theta_ellipse = np.linspace(0, 2 * np.pi, 500)
+    x_pa = ring_rad * np.cos(inc) * np.sin(theta_ellipse)
+    y_pa = ring_rad * np.cos(theta_ellipse)
+
+    x_shifted = x_pa * np.cos(pa) + y_pa * np.sin(pa)
+    y_shifted = -x_pa * np.sin(pa) + y_pa * np.cos(pa)
+
+    ngc3351_center = phase_center.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+    ellipse_sky = ngc3351_center.spherical_offsets_by(x_shifted * u.arcsec, y_shifted * u.arcsec)
+    ellipse_ra = ellipse_sky.ra.deg
+    ellipse_dec = ellipse_sky.dec.deg
 
     # Convert surface brightness from Jy/sr to MJy/sr
     data_plot /= 1e6
     resid_plot /= 1e6
     ring_model /= 1e6
     ring_model_intrinsic_mjy = ring_model_intrinsic / 1e6
-
-    # --- Figure 1: Side-by-Side Comparison (Data, Model, Residuals) ---
-    fig = plt.figure(figsize=(24, 8))
-
-    ax1 = plt.subplot(131, projection=data_wcs)
-    im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    ax2 = plt.subplot(132, projection=mod_wcs)
-    im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    ax3 = plt.subplot(133, projection=data_wcs)
-    im3 = ax3.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    axes = [ax1, ax2, ax3]
-    for ax in axes:
-        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
-        if ax != ax1:
-            ax.set_ylabel(r'', size=0)
-            ax.coords[1].set_ticklabel(size=0)
-        else:
-            ax.set_ylabel(r"Declination (J2000)", size=22, labelpad=1)
-        if ax != ax2:
-            ax.set_xlabel(r'', size=0)
-        else:
-            ax.set_xlabel(r"Right Ascension (J2000)", size=22)
-
-    fig.suptitle("93 GHz Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
-    fig.subplots_adjust(hspace=0.1, wspace=0.1)
-    pp.savefig(fig)
-    plt.close(fig)
-
-    # --- Figure 2: Comparison with Model Contour Overlays ---
-    fig = plt.figure(figsize=(24, 8))
-
-    ax1 = plt.subplot(131, projection=data_wcs)
-    im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    ax2 = plt.subplot(132, projection=mod_wcs)
-    im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    ax3 = plt.subplot(133, projection=data_wcs)
-    im3 = ax3.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    axes = [ax1, ax2, ax3]
-    for ax in axes:
-        ax.set_autoscale_on(False)
-        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
-
-    peak_flux = np.percentile(data_plot, 99.95)
-
-    # Overlay model brightness contours
-    ax1.contour(ring_model, colors='w', transform=ax1.get_transform(mod_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax2.contour(ring_model, colors='k', transform=ax2.get_transform(mod_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-    ax3.contour(ring_model, colors='w', transform=ax3.get_transform(mod_wcs), levels=peak_flux * np.array([0.2, 0.4, 0.6, 0.8, 0.95]), zorder=10, linewidths=0.5)
-
-    for ax in axes:
-        if ax != ax1:
-            ax.set_ylabel(r'', size=0)
-            ax.coords[1].set_ticklabel(size=0)
-        else:
-            ax.set_ylabel(r"Declination (J2000)", size=22, labelpad=1)
-        if ax != ax2:
-            ax.set_xlabel(r'', size=0)
-        else:
-            ax.set_xlabel(r"Right Ascension (J2000)", size=22)
-
-    fig.suptitle("93 GHz Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
-    fig.subplots_adjust(hspace=0.1, wspace=0.1)
-    pp.savefig(fig)
-    plt.close(fig)
-
-    # --- Figure 3: Comparison with Reference Cluster Positions ---
-    fig = plt.figure(figsize=(24, 8))
-
-    ax1 = plt.subplot(131, projection=data_wcs)
-    im1 = ax1.imshow(data_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar1 = plt.colorbar(mappable=im1, ax=ax1, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    ax2 = plt.subplot(132, projection=mod_wcs)
-    im2 = ax2.imshow(ring_model, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar2 = plt.colorbar(mappable=im2, ax=ax2, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    ax3 = plt.subplot(133, projection=data_wcs)
-    im3 = ax3.imshow(resid_plot, vmin=np.percentile(data_plot, 1), vmax=np.percentile(data_plot, 99.95), origin='lower', cmap='inferno', rasterized=True)
-    cbar3 = plt.colorbar(mappable=im3, ax=ax3, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-
-    axes = [ax1, ax2, ax3]
-    for ax in axes:
-        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
 
     ymc_ids = [15, 6, 18]
     sun_coords = sun_radec(ymc_ids)
@@ -943,29 +860,77 @@ def main():
     sun_ra, sun_dec = zip(*sun_coords)
     dynest_ra, dynest_dec = zip(*dynest_coords)
 
-    for ax in axes:
+    # --- Combined 2x3 Comparison (Data, Model, Residuals with & without Overlays) ---
+    fig = plt.figure(figsize=(24, 15))
+    gs = fig.add_gridspec(2, 4, width_ratios=[1, 1, 1, 0.04], wspace=0.08, hspace=0.08,
+                           left=0.08, right=0.91, bottom=0.08, top=0.96)
+
+    vmin_full = np.percentile(data_plot, 1)
+    vmax_full = np.percentile(data_plot, 99.95)
+
+    # Row 0: Data, Model, Dirty Residuals
+    ax00 = fig.add_subplot(gs[0, 0], projection=data_wcs)
+    im00 = ax00.imshow(data_plot, vmin=vmin_full, vmax=vmax_full, origin='lower', cmap='inferno', rasterized=True)
+
+    ax01 = fig.add_subplot(gs[0, 1], projection=mod_wcs)
+    im01 = ax01.imshow(ring_model, vmin=vmin_full, vmax=vmax_full, origin='lower', cmap='inferno', rasterized=True)
+
+    ax02 = fig.add_subplot(gs[0, 2], projection=data_wcs)
+    im02 = ax02.imshow(resid_plot, vmin=vmin_full, vmax=vmax_full, origin='lower', cmap='inferno', rasterized=True)
+
+    row0_axes = [ax00, ax01, ax02]
+    for ax in row0_axes:
+        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
+
+    # Row 1: Data, Model, Dirty Residuals with Fitted Cluster & Ring Overlays
+    ax10 = fig.add_subplot(gs[1, 0], projection=data_wcs)
+    im10 = ax10.imshow(data_plot, vmin=vmin_full, vmax=vmax_full, origin='lower', cmap='inferno', rasterized=True)
+
+    ax11 = fig.add_subplot(gs[1, 1], projection=mod_wcs)
+    im11 = ax11.imshow(ring_model, vmin=vmin_full, vmax=vmax_full, origin='lower', cmap='inferno', rasterized=True)
+
+    ax12 = fig.add_subplot(gs[1, 2], projection=data_wcs)
+    im12 = ax12.imshow(resid_plot, vmin=vmin_full, vmax=vmax_full, origin='lower', cmap='inferno', rasterized=True)
+
+    row1_axes = [ax10, ax11, ax12]
+    for ax in row1_axes:
         ax.set_autoscale_on(False)
-        # Plot ring peak profile as white dashed ellipse underneath the scatter markers
-        if has_ring and ellipse_ra is not None:
+        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
+        # Plot ring peak profile as white dashed ellipse underneath scatter markers
+        if ellipse_ra is not None:
             ax.plot(ellipse_ra, ellipse_dec, transform=ax.get_transform('world'),
                     color='white', linestyle='--', linewidth=1.5, zorder=12, label='Ring Ridge Peak')
-        #ax.scatter(sun_ra, sun_dec, transform=ax.get_transform('world'), color='red', marker='x', s=120, linewidth=2, zorder=15, label='Sun et al. (2024)')
         ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2, zorder=15, label='Fitted Model')
         ax.scatter(phase_center.ra.deg, phase_center.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='+', s=120, linewidth=2, zorder=15, label='Phase Center')
 
-    for ax in axes:
-        if ax != ax1:
-            ax.set_ylabel(r'', size=0)
-            ax.coords[1].set_ticklabel(size=0)
-        else:
-            ax.set_ylabel(r"Declination (J2000)", size=22, labelpad=1)
-        if ax != ax2:
-            ax.set_xlabel(r'', size=0)
-        else:
-            ax.set_xlabel(r"Right Ascension (J2000)", size=22)
+    all_axes = row0_axes + row1_axes
+    for ax in all_axes:
+        ax.set_xlabel(r'', size=0)
+        ax.set_ylabel(r'', size=0)
 
-    fig.suptitle("93 GHz Continuum Intensity of NGC 3351 (MJy/sr)", size=30)
-    fig.subplots_adjust(hspace=0.1, wspace=0.1)
+    # Hide y tick labels on cols 1 and 2
+    for ax in [ax01, ax02, ax11, ax12]:
+        ax.coords[1].set_ticklabel_visible(False)
+
+    # Hide x tick labels on row 0
+    for ax in row0_axes:
+        ax.coords[0].set_ticklabel_visible(False)
+
+    # Shared x-axis label in the middle of the 3 columns
+    ax11.set_xlabel(r"Right Ascension (J2000)", size=22, labelpad=12)
+
+    # Shared colorbar spanning both rows on the right
+    cax = fig.add_subplot(gs[:, 3])
+    cbar = fig.colorbar(im12, cax=cax)
+    cbar.set_label(r'Specific Intensity (MJy/sr)', size=22)
+
+    fig.canvas.draw()
+    # Shared y-axis label in the middle of the two rows
+    bbox_top = ax00.get_position()
+    bbox_bot = ax10.get_position()
+    y_mid = (bbox_top.y1 + bbox_bot.y0) / 2
+    fig.text(0.025, y_mid, r"Declination (J2000)", va='center', ha='center', rotation='vertical', size=22)
+
     pp.savefig(fig)
     plt.close(fig)
 
@@ -1009,26 +974,26 @@ def main():
         ylim_max_unconv = vmax_unconv * 1.05
 
         cutouts = [
-            ('Observed CLEAN Image', cutout_data, False),
-            ('Model Sky Intensity (Beam Convolved)', cutout_mod, False),
-            ('Dirty Residual Visibilities', cutout_res, False),
-            ('Intrinsic Sky Model (Unconvolved)', cutout_mod_int, True)
+            (cutout_data, vmin_shared, vmax_shared, ylim_min_shared, ylim_max_shared, True),    # Data image
+            (cutout_mod, vmin_shared, vmax_shared, ylim_min_shared, ylim_max_shared, False),
+            (cutout_res, vmin_shared, vmax_shared, ylim_min_shared, ylim_max_shared, False),
+            (cutout_mod_int, vmin_unconv, vmax_unconv, ylim_min_unconv, ylim_max_unconv, False)
         ]
 
-        for target_name, cutout, is_unconv in cutouts:
+        fig = plt.figure(figsize=(24, 20))
+        fig.suptitle(f"YMC {b_idx + 1}", size=24, y=0.98)
+
+        gs = fig.add_gridspec(4, 3, width_ratios=[1.2, 1, 1], wspace=0.32, hspace=0.18,
+                               left=0.07, right=0.96, bottom=0.06, top=0.93)
+
+        axes_img = []
+        axes_ra = []
+        axes_dec = []
+        cbars = []
+
+        for r, (cutout, vmin_zoom, vmax_zoom, ylim_min, ylim_max, is_data_img) in enumerate(cutouts):
             cut_data = cutout.data
             cut_wcs = cutout.wcs
-
-            if is_unconv:
-                vmin_zoom = vmin_unconv
-                vmax_zoom = vmax_unconv
-                ylim_min = ylim_min_unconv
-                ylim_max = ylim_max_unconv
-            else:
-                vmin_zoom = vmin_shared
-                vmax_zoom = vmax_shared
-                ylim_min = ylim_min_shared
-                ylim_max = ylim_max_shared
 
             cx_f, cy_f = cut_wcs.world_to_pixel(blob_coord)
             cx = int(round(float(cx_f)))
@@ -1050,25 +1015,26 @@ def main():
             # Relative Dec offset in arcseconds centered on Gaussian center b_dec
             dec_offsets_arcsec = (pixel_world_dec.dec.deg - b_dec) * 3600.0
 
-            # --- Layout: Left panel = 2D Zoomed Cutout; Right panels = 1D RA & Dec Profiles ---
-            fig = plt.figure(figsize=(24, 8))
-
-            ax_img = plt.subplot(131, projection=cut_wcs)
+            # --- Column 0: 2D Zoomed Cutout ---
+            ax_img = fig.add_subplot(gs[r, 0], projection=cut_wcs)
             im_zoom = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower', cmap='inferno', rasterized=True)
-            cbar_zoom = plt.colorbar(mappable=im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.05, shrink=0.8, aspect=15)
-            cbar_zoom.set_label(r'Specific Intensity (MJy/sr)', size=16)
+            cbar_zoom = fig.colorbar(im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.04, shrink=0.85, aspect=15)
+            cbar_zoom.set_label(r'Specific Intensity (MJy/sr)', size=14)
+            cbars.append(cbar_zoom)
 
-            # Restoring beam patch
-            safe_add_beam(ax_img, header=hdr_data, frame=False, color='white', corner='bottom left')
+            # Restoring beam: gray dotted ellipse
+            safe_add_beam(ax_img, header=hdr_data, frame=False, color='gray', corner='bottom left', fill=False, linestyle=':')
 
-            # Overlay ring peak profile ellipse if ring model is present
+            # Overlay ring peak profile ellipse
             ax_img.set_autoscale_on(False)
-            if has_ring and ellipse_ra is not None:
+            if ellipse_ra is not None:
                 ax_img.plot(ellipse_ra, ellipse_dec, transform=ax_img.get_transform('world'),
                             color='white', linestyle='--', linewidth=1.5, zorder=12)
 
-            # Central blob coordinate marker
-            #ax_img.scatter(b_ra, b_dec, transform=ax_img.get_transform('world'), color='blue', marker='x', s=150, linewidth=2, zorder=15)
+            # In data image only, mark the brightest pixel with a magenta *
+            if is_data_img:
+                bright_y, bright_x = np.unravel_index(np.argmax(cut_data), cut_data.shape)
+                ax_img.scatter(bright_x, bright_y, marker='*', color='magenta', s=160, zorder=20)
 
             # Slice indicators
             ax_img.axhline(cy - 1.5, color='crimson', linestyle=':', linewidth=1.5)
@@ -1076,38 +1042,69 @@ def main():
             ax_img.axvline(cx - 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
             ax_img.axvline(cx + 1.5, color='dodgerblue', linestyle=':', linewidth=1.5)
 
-            ax_img.set_xlabel(r"Right Ascension (J2000)", size=20)
-            ax_img.set_ylabel(r"Declination (J2000)", size=20, labelpad=1)
+            ax_img.set_ylabel(r'', size=0)
+            if r == 3:
+                ax_img.set_xlabel(r"Right Ascension (J2000)", size=18)
+            else:
+                ax_img.set_xlabel(r'', size=0)
+                ax_img.coords[0].set_ticklabel_visible(False)
+            axes_img.append(ax_img)
 
-            # Panel 2: 1D RA Profile
-            ax_ra = plt.subplot(132)
+            # --- Column 1: 1D RA Profile ---
+            ax_ra = fig.add_subplot(gs[r, 1])
             ax_ra.plot(ra_offsets_arcsec, ra_profile, color='crimson', lw=2.5)
             ax_ra.axvline(0.0, color='gray', linestyle='--', alpha=0.7)
+            ax_ra.axhline(0.0, color='gray', linestyle='--', alpha=0.7)
             ax_ra.set_xlim(ra_offsets_arcsec[0], ra_offsets_arcsec[-1])
             ax_ra.set_ylim(ylim_min, ylim_max)
-            ax_ra.set_xlabel(r"$\Delta$RA Offset (arcsec)", size=20)
-            ax_ra.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
-            ax_ra.set_title(r"1D RA Profile ($\pm 1$ Dec pixel avg)", size=18)
+            ax_ra.set_ylabel(r'', size=0)
             ax_ra.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
             ax_ra.grid(True, alpha=0.3, linestyle=':')
+            if r == 0:
+                ax_ra.set_title(r"1D RA Profile", size=18)
+            if r == 3:
+                ax_ra.set_xlabel(r"$\Delta$RA Offset (arcsec)", size=18)
+            else:
+                ax_ra.tick_params(labelbottom=False)
+            axes_ra.append(ax_ra)
 
-            # Panel 3: 1D Dec Profile
-            ax_dec = plt.subplot(133)
+            # --- Column 2: 1D Dec Profile ---
+            ax_dec = fig.add_subplot(gs[r, 2])
             ax_dec.plot(dec_offsets_arcsec, dec_profile, color='dodgerblue', lw=2.5)
             ax_dec.axvline(0.0, color='gray', linestyle='--', alpha=0.7)
+            ax_dec.axhline(0.0, color='gray', linestyle='--', alpha=0.7)
             ax_dec.set_xlim(dec_offsets_arcsec[0], dec_offsets_arcsec[-1])
             ax_dec.set_ylim(ylim_min, ylim_max)
-            ax_dec.set_xlabel(r"$\Delta$Dec Offset (arcsec)", size=20)
-            ax_dec.set_ylabel(r"Specific Intensity (MJy/sr)", size=20)
-            ax_dec.set_title(r"1D Dec Profile ($\pm 1$ RA pixel avg)", size=18)
+            ax_dec.set_ylabel(r'', size=0)
+            ax_dec.tick_params(labelleft=False)
             ax_dec.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
             ax_dec.grid(True, alpha=0.3, linestyle=':')
+            if r == 0:
+                ax_dec.set_title(r"1D Dec Profile", size=18)
+            if r == 3:
+                ax_dec.set_xlabel(r"$\Delta$Dec Offset (arcsec)", size=18)
+            else:
+                ax_dec.tick_params(labelbottom=False)
+            axes_dec.append(ax_dec)
 
-            blob_label = f"Peak {b_idx + 1}" if "2peak" in fittype else (f"Blob {b_idx + 1}" if len(dynest_coords) > 1 else "Blob")
-            fig.suptitle(f"{target_name} - {blob_label} Zoom ($2'' \\times 2''$)", size=26)
-            fig.subplots_adjust(hspace=0.2, wspace=0.28, bottom=0.15)
-            pp.savefig(fig)
-            plt.close(fig)
+        fig.canvas.draw()
+
+        # Shared y-axis label for Column 0 (Declination)
+        bbox_img_top = axes_img[0].get_position()
+        bbox_img_bot = axes_img[3].get_position()
+        y_mid_img = (bbox_img_top.y1 + bbox_img_bot.y0) / 2
+        fig.text(0.02, y_mid_img, r"Declination (J2000)", va='center', ha='center', rotation='vertical', size=18)
+
+        # Shared y-axis label for Column 1 & 2 (Specific Intensity)
+        bbox_ra_top = axes_ra[0].get_position()
+        bbox_ra_bot = axes_ra[3].get_position()
+        y_mid_ra = (bbox_ra_top.y1 + bbox_ra_bot.y0) / 2
+        cbar_bbox = cbars[0].ax.get_position()
+        x_pos_ra_label = (cbar_bbox.x1 + bbox_ra_bot.x0) / 2
+        fig.text(x_pos_ra_label, y_mid_ra, r"Specific Intensity (MJy/sr)", va='center', ha='center', rotation='vertical', size=18)
+
+        pp.savefig(fig)
+        plt.close(fig)
 
     # --------------------------------------------------------------------------
     # 8. Summary Table of Posterior Estimates and Derived Quantities
