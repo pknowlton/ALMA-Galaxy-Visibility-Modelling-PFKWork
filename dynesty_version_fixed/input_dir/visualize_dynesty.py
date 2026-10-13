@@ -863,7 +863,7 @@ def main():
     # --- Combined 2x3 Comparison (Data, Model, Residuals with & without Overlays) ---
     fig = plt.figure(figsize=(24, 15))
     gs = fig.add_gridspec(2, 4, width_ratios=[1, 1, 1, 0.04], wspace=0.08, hspace=0.08,
-                           left=0.08, right=0.91, bottom=0.08, top=0.96)
+                           left=0.08, right=0.91, bottom=0.09, top=0.96)
 
     vmin_full = np.percentile(data_plot, 1)
     vmax_full = np.percentile(data_plot, 99.95)
@@ -916,9 +916,6 @@ def main():
     for ax in row0_axes:
         ax.coords[0].set_ticklabel_visible(False)
 
-    # Shared x-axis label in the middle of the 3 columns
-    ax11.set_xlabel(r"Right Ascension (J2000)", size=22, labelpad=12)
-
     # Shared colorbar spanning both rows on the right
     cax = fig.add_subplot(gs[:, 3])
     cbar = fig.colorbar(im12, cax=cax)
@@ -930,6 +927,12 @@ def main():
     bbox_bot = ax10.get_position()
     y_mid = (bbox_top.y1 + bbox_bot.y0) / 2
     fig.text(0.025, y_mid, r"Declination (J2000)", va='center', ha='center', rotation='vertical', size=22)
+
+    # Shared x-axis label in the middle of the 3 columns
+    bbox_left = ax10.get_position()
+    bbox_right = ax12.get_position()
+    x_mid = (bbox_left.x0 + bbox_right.x1) / 2
+    fig.text(x_mid, 0.028, r"Right Ascension (J2000)", ha='center', va='center', size=22)
 
     pp.savefig(fig)
     plt.close(fig)
@@ -983,8 +986,8 @@ def main():
         fig = plt.figure(figsize=(24, 20))
         fig.suptitle(f"YMC {b_idx + 1}", size=24, y=0.98)
 
-        gs = fig.add_gridspec(4, 3, width_ratios=[1.2, 1, 1], wspace=0.32, hspace=0.18,
-                               left=0.07, right=0.96, bottom=0.06, top=0.93)
+        gs = fig.add_gridspec(4, 3, width_ratios=[1.2, 1, 1], wspace=0.32, hspace=0.22,
+                               left=0.07, right=0.96, bottom=0.07, top=0.93)
 
         axes_img = []
         axes_ra = []
@@ -1019,7 +1022,6 @@ def main():
             ax_img = fig.add_subplot(gs[r, 0], projection=cut_wcs)
             im_zoom = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower', cmap='inferno', rasterized=True)
             cbar_zoom = fig.colorbar(im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.04, shrink=0.85, aspect=15)
-            cbar_zoom.set_label(r'Specific Intensity (MJy/sr)', size=14)
             cbars.append(cbar_zoom)
 
             # Restoring beam: gray dotted ellipse
@@ -1047,7 +1049,6 @@ def main():
                 ax_img.set_xlabel(r"Right Ascension (J2000)", size=18)
             else:
                 ax_img.set_xlabel(r'', size=0)
-                ax_img.coords[0].set_ticklabel_visible(False)
             axes_img.append(ax_img)
 
             # --- Column 1: 1D RA Profile ---
@@ -1065,7 +1066,7 @@ def main():
             if r == 3:
                 ax_ra.set_xlabel(r"$\Delta$RA Offset (arcsec)", size=18)
             else:
-                ax_ra.tick_params(labelbottom=False)
+                ax_ra.set_xlabel(r'', size=0)
             axes_ra.append(ax_ra)
 
             # --- Column 2: 1D Dec Profile ---
@@ -1076,7 +1077,6 @@ def main():
             ax_dec.set_xlim(dec_offsets_arcsec[0], dec_offsets_arcsec[-1])
             ax_dec.set_ylim(ylim_min, ylim_max)
             ax_dec.set_ylabel(r'', size=0)
-            ax_dec.tick_params(labelleft=False)
             ax_dec.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
             ax_dec.grid(True, alpha=0.3, linestyle=':')
             if r == 0:
@@ -1084,7 +1084,7 @@ def main():
             if r == 3:
                 ax_dec.set_xlabel(r"$\Delta$Dec Offset (arcsec)", size=18)
             else:
-                ax_dec.tick_params(labelbottom=False)
+                ax_dec.set_xlabel(r'', size=0)
             axes_dec.append(ax_dec)
 
         fig.canvas.draw()
