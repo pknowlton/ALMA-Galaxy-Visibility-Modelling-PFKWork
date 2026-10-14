@@ -84,6 +84,7 @@ def test_summary_table_rendering():
     """Verify render_summary_table_page generates tables across different model configurations."""
     test_configs = [
         ('twod_gaussring', 7),
+        ('twod_gaussring_nonuni', 8),
         ('twod_gauss1blob', 11),
         ('twod_gauss1blob_2peak', 13),
         ('twod_gauss1blob_2peak_dp', 15),
@@ -171,10 +172,89 @@ def test_runplot_evidence_limits():
     plt.close(fig)
     print("PASS: runplot evidence limit adaptation verified.")
 
+def test_nonuni_ring_properties():
+    """Verify non-uniform ring mathematical properties, flux conservation, non-negativity, and transforms."""
+    from model_prof import gaussring_prof, gaussring_nonuni_prof, ring_flux_to_peak, twod_gaussring_nonuni_model
+    import prior_tform_streamline as pt
+
+    # 1. Test prior transform dimensionality and bounds
+    u_test = np.array([0.5] * 8)
+    p_test = pt.twod_gaussring_nonuni_ptform(u_test)
+    assert len(p_test) == 8, f"Expected 8 parameters, got {len(p_test)}"
+    # Prof. Offset bounds should be [0, 180] deg
+    assert p_test[7] == 90.0, f"Expected offset 90.0 at u=0.5, got {p_test[7]}"
+
+    u_zero = np.zeros(8)
+    p_zero = pt.twod_gaussring_nonuni_ptform(u_zero)
+    assert p_zero[7] == 0.0, f"Expected offset 0.0 at u=0.0, got {p_zero[7]}"
+
+    u_one = np.ones(8)
+    p_one = pt.twod_gaussring_nonuni_ptform(u_one)
+    assert p_one[7] == 180.0, f"Expected offset 180.0 at u=1.0, got {p_one[7]}"
+
+    # 2. Test mathematical profile properties: non-negativity and peak locations
+    peak_ring = 8.0
+    sigma_ring = 0.5
+    rad_ring = 5.0
+    off_rad = np.radians(45.0)
+
+    # 1D azimuthal test
+    thetas = np.linspace(0, 2 * np.pi, 10000, endpoint=False)
+    r_peak = np.full_like(thetas, rad_ring)
+    prof_vals = gaussring_nonuni_prof(peak_ring, thetas, off_rad, sigma_ring, rad_ring, r_peak, 1.0)
+
+    # Must be non-negative everywhere
+    assert np.all(prof_vals >= 0.0), "Non-uniform ring surface brightness must be non-negative everywhere!"
+
+    # Maximum brightness should be 2 * 10^peak_ring
+    max_expected = 2.0 * (10.0**peak_ring)
+    np.testing.assert_allclose(np.max(prof_vals), max_expected, rtol=1e-4)
+
+    # Minimum brightness should be 0.0
+    np.testing.assert_allclose(np.min(prof_vals), 0.0, atol=1e-2)
+
+    # Peaks should occur at theta = off_rad and theta = off_rad + pi
+    peak_idx = np.where(prof_vals > 0.999 * max_expected)[0]
+    peak_angles = thetas[peak_idx]
+    # Check that peaks are near 45 deg and 225 deg
+    deg_peaks = np.degrees(peak_angles)
+    has_peak1 = np.any(np.abs(deg_peaks - 45.0) < 0.2)
+    has_peak2 = np.any(np.abs(deg_peaks - 225.0) < 0.2)
+    assert has_peak1 and has_peak2, f"Peaks should be at 45 and 225 deg, found near {deg_peaks}"
+
+    # 3. Test flux conservation: integral over non-uniform ring == uniform ring
+    # Create 2D grid
+    nxy = 256
+    dxy = 0.1
+    img_nonuni = twod_gaussring_nonuni_model(peak_ring, off_rad, sigma_ring, rad_ring, 0.0, 0.0, 0.0, 0.0, nxy, dxy, 'plot')
+    from model_prof import twod_gaussring_model
+    img_uni = twod_gaussring_model(peak_ring, sigma_ring, rad_ring, 0.0, 0.0, 0.0, 0.0, nxy, dxy, 'plot')
+
+    flux_nonuni = np.sum(img_nonuni) * (dxy**2)
+    flux_uni = np.sum(img_uni) * (dxy**2)
+
+    np.testing.assert_allclose(flux_nonuni, flux_uni, rtol=1e-3,
+                               err_msg=f"Total flux should match uniform ring: nonuni={flux_nonuni}, uni={flux_uni}")
+
+    # Also test in chi2/vis mode
+    dxy_rad = 0.1 * (np.pi / (180.0 * 3600.0))
+    sigma_rad = sigma_ring * (np.pi / (180.0 * 3600.0))
+    rad_rad = rad_ring * (np.pi / (180.0 * 3600.0))
+    img_nonuni_vis = twod_gaussring_nonuni_model(peak_ring, off_rad, sigma_rad, rad_rad, 0.5, 0.0, 0.0, 0.0, nxy, dxy_rad, 'chi2')
+    img_uni_vis = twod_gaussring_model(peak_ring, sigma_rad, rad_rad, 0.5, 0.0, 0.0, 0.0, nxy, dxy_rad, 'chi2')
+
+    flux_vis_nonuni = np.sum(img_nonuni_vis)
+    flux_vis_uni = np.sum(img_uni_vis)
+    np.testing.assert_allclose(flux_vis_nonuni, flux_vis_uni, rtol=1e-3,
+                               err_msg=f"Total flux in chi2 mode should match uniform ring: nonuni={flux_vis_nonuni}, uni={flux_vis_uni}")
+
+    print("PASS: Non-uniform ring mathematical properties, flux conservation, and transforms verified.")
+
 if __name__ == '__main__':
     test_convolve_beam_orientation()
     test_safe_add_beam()
     test_summary_table_rendering()
+    test_nonuni_ring_properties()
     test_uvplot_generation()
     test_runplot_evidence_limits()
     print("\nALL VISUALIZATION AND POST-PROCESSING TESTS PASSED!")

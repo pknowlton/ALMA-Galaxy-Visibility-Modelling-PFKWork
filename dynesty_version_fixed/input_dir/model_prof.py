@@ -1,4 +1,4 @@
-"""
+r"""
 2D Galaxy Brightness Profile Models and Galario Visibility Interface
 =====================================================================
 This module defines parametric 2D intensity distributions (e.g. tilted Gaussian
@@ -31,7 +31,7 @@ expressed in **radians** or **arcseconds**, depending on the execution mode:
 1. `'chi2'` / `'vis'` (Fourier / Visibility domain):
    - Galario operates internally in **radians**.
    - Input parameters in `pars` are supplied in **arcseconds** by the sampler.
-   - The top-level wrapper functions (`twod_gaussring`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`, `resid_gauss1blob`, `resid_gauss3blob`)
+   - The top-level wrapper functions (`twod_gaussring`, `twod_gaussring_nonuni`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`, `resid_gauss1blob`, `resid_gauss3blob`)
      automatically convert all spatial dimensions from arcseconds to **radians**
      (via multiplication by `arcsec = np.pi / (180 * 3600)`).
    - Pixel scale `dxy` is provided in **radians** (from `get_image_size`).
@@ -79,7 +79,7 @@ def get_grid(nxy, dxy):
 #########################
 
 def gaussring_prof(peak_ring, sigma_ring, rad_ring, radius, dxy):
-    """
+    r"""
     Computes the radial surface brightness of a Gaussian ring.
 
     The radial profile is defined as a 1D Gaussian centered at a specific ring radius:
@@ -108,12 +108,52 @@ def gaussring_prof(peak_ring, sigma_ring, rad_ring, radius, dxy):
     """
     return 10**peak_ring * np.exp((-1/2)*((radius-rad_ring)/sigma_ring)**2) * (dxy**2)
 
-def gaussring_nonuni_prof(amp_ring, theta, off_ring, sigma_ring, rad_ring, radius, dxy):
+def gaussring_nonuni_prof(peak_ring, theta, off_ring, sigma_ring, rad_ring, radius, dxy):
+    r"""
+    Computes the 2D surface brightness of a non-uniform Gaussian ring with m=2 azimuthal modulation.
 
-    return ((10**amp)*np.sin((2*theta)+(off))) * np.exp((-1/2)*((radius-rad_ring)/sigma_ring)**2) * (dxy**2)
+    The azimuthal surface brightness is modeled as:
+        $I(r, \theta) = 10^{\text{peak\_ring}} \cdot \left[1 + \cos\left(2 (\theta - \phi_{\text{off}})\right)\right] \cdot \exp\left( -\frac{1}{2} \left(\frac{r - r_{\text{ring}}}{\sigma_{\text{ring}}}\right)^2 \right) \cdot \text{dxy}^2$
+
+    This formulation keeps the surface brightness non-negative everywhere ($I \ge 0$), creates two
+    symmetric azimuthal peaks separated by 180 degrees at $\theta = \phi_{\text{off}}$ and $\theta = \phi_{\text{off}} + \pi$,
+    and exactly preserves the integrated ring flux:
+        $\int_0^{2\pi} [1 + \cos(2(\theta - \phi_{\text{off}}))] \, d\theta = 2\pi$
+    Consequently, `ring_flux_to_peak(log_flux, sigma_rad, rad_rad, inc_rad)` remains mathematically
+    exact for converting total integrated flux (in Jy) to `peak_ring` (log10 Jy/sr).
+
+    Parameters
+    ----------
+    peak_ring : float
+        Base-10 logarithm of the mean azimuthal peak surface brightness in Jy/sr (i.e. $\log_{10}(I_0)$).
+        Peak surface brightness along the ring reaches $2 \cdot 10^{\text{peak\_ring}}$.
+    theta : numpy.ndarray
+        2D grid of azimuthal angles on the deprojected disk plane in **radians**, measured East of North.
+    off_ring : float
+        Azimuthal position angle of the emission peak on the disk in **radians**, measured East of North.
+    sigma_ring : float
+        Radial standard deviation (Gaussian sigma) of the ring. Note: FWHM = 2.35482 * sigma.
+        Expressed in **radians** (for `'chi2'` / `'vis'`) or in **arcseconds** (for `'plot'`).
+    rad_ring : float
+        Central radial distance of the ring ridge from galaxy center.
+        Expressed in **radians** (for `'chi2'` / `'vis'`) or in **arcseconds** (for `'plot'`).
+    radius : numpy.ndarray
+        2D grid of radial distances from the ring center, in matching units (**radians** or **arcseconds**).
+    dxy : float
+        Pixel scale (angular size per pixel in radians for `'chi2'`/`'vis'`, or 1 for direct surface brightness in `'plot'`).
+        Multiplying by $\text{dxy}^2$ converts surface brightness into flux per pixel.
+
+    Returns
+    -------
+    numpy.ndarray
+        2D array of flux or intensity values for the non-uniform ring component.
+    """
+    azimuthal_factor = 1.0 + np.cos(2.0 * (theta - off_ring))
+    radial_profile = np.exp((-0.5) * ((radius - rad_ring) / sigma_ring)**2)
+    return (10.0**peak_ring) * azimuthal_factor * radial_profile * (dxy**2)
 
 def gaussblob_prof(peak, sigma, xx, yy, xoff, yoff, dxy):
-    """
+    r"""
     Computes the 2D surface brightness of a circular Gaussian cluster/blob.
 
     Represents localized emission peaks (e.g. starburst clusters / giant molecular clouds):
@@ -180,7 +220,7 @@ def blob_flux_to_peak(log_flux_jy, sigma_rad):
 #########################
 
 def twod_gaussring_model(peak, sigma, rad, inc, pa, dra, ddec, nxy, dxy, version):
-    """
+    r"""
     Generates a 2D image matrix representing an inclined, rotated Gaussian ring.
 
     Parameters
@@ -306,11 +346,49 @@ def twod_gaussring(pars, args, vis_data, version):
         return model_img
 
 #########################
-### 2D Non-Uniformm Gaussian Ring
+### 2D Non-Uniform Gaussian Ring
 #########################
 
-def twod_gaussring_nonuni_model(amp, off, sigma, rad, inc, pa, dra, ddec, nxy, dxy, version):
+def twod_gaussring_nonuni_model(peak, offset, sigma, rad, inc, pa, dra, ddec, nxy, dxy, version):
+    r"""
+    Generates a 2D image matrix representing an inclined, rotated non-uniform Gaussian ring
+    with m=2 azimuthal modulation.
 
+    Parameters
+    ----------
+    peak : float
+        Log10 of the mean azimuthal peak surface brightness [log(Jy/sr)].
+    offset : float
+        Azimuthal position angle of the emission peak in radians (East of North in the disk frame).
+    sigma : float
+        Gaussian radial sigma. In **radians** for `version in ('chi2', 'vis')`; in **arcseconds** for `version == 'plot'`.
+    rad : float
+        Central ring radius. In **radians** for `version in ('chi2', 'vis')`; in **arcseconds** for `version == 'plot'`.
+    inc : float
+        Disk inclination angle in radians (0 = face-on, $\pi/2$ = edge-on).
+    pa : float
+        Disk position angle in radians (East of North).
+    dra : float
+        Right Ascension center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
+    ddec : float
+        Declination center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
+    nxy : int
+        Number of pixels along each axis of the square image grid.
+    dxy : float
+        Angular pixel scale. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
+    version : str
+        Operating mode:
+            - `'chi2'` / `'vis'`: Computes deprojected image in intrinsic coordinates (radians);
+                                  spatial shifts ($\Delta\alpha, \Delta\delta$) and rotation
+                                  are handled analytically by Galario during FFT.
+            - `'plot'`: Applies spatial shifts and rotation directly on the pixel grid (arcseconds)
+                        for displaying in sky coordinates.
+
+    Returns
+    -------
+    numpy.ndarray
+        2D numpy array of shape (nxy, nxy) containing model sky brightness.
+    """
     xx, yy = get_grid(nxy, dxy)
 
     if version in ("chi2", "vis"):
@@ -318,9 +396,10 @@ def twod_gaussring_nonuni_model(amp, off, sigma, rad, inc, pa, dra, ddec, nxy, d
         xinc = xx / np.cos(inc)
         radius_vec = np.hypot(xinc, yy)
 
-        theta_vec = np.arctan2(ypa, xinc)
+        # Azimuthal angle in the disk plane (East of North)
+        theta_vec = np.arctan2(xinc, yy)
 
-        ring_model_jypix = gaussring_nonuni_prof(amp, theta_vec, off, sigma, rad, radius_vec, dxy)
+        ring_model_jypix = gaussring_nonuni_prof(peak, theta_vec, offset, sigma, rad, radius_vec, dxy)
         return ring_model_jypix
 
     elif version == 'plot':
@@ -336,10 +415,11 @@ def twod_gaussring_nonuni_model(amp, off, sigma, rad, inc, pa, dra, ddec, nxy, d
         xinc = xpa / np.cos(inc)
         radius_vec = np.hypot(xinc, ypa)
 
-        theta_vec = np.arctan2(ypa, xinc)
+        # Azimuthal angle in the disk plane (East of North)
+        theta_vec = np.arctan2(xinc, ypa)
 
         # Return surface brightness in Jy/sr (dxy = 1)
-        ring_model_jysr = gaussring_nonuni_prof(amp, theta_vec, off, sigma, rad, radius_vec, 1)
+        ring_model_jysr = gaussring_nonuni_prof(peak, theta_vec, offset, sigma, rad, radius_vec, 1)
         return ring_model_jysr
 
     else:
@@ -348,24 +428,48 @@ def twod_gaussring_nonuni_model(amp, off, sigma, rad, inc, pa, dra, ddec, nxy, d
         raise ValueError(msg)
 
 def twod_gaussring_nonuni(pars, args, vis_data, version):
+    """
+    Top-level model handler for the 2D Non-Uniform Gaussian Ring (8 parameters).
 
-    log_flux, offset, log_sigma, ring_rad, inclination, posangle, dRA, dDec = pars
+    Parameters
+    ----------
+    pars : array_like
+        Model parameter vector:
+        [log_flux (log10 Jy), log_sigma (log10 arcsec), ring_rad (arcsec), inclination (deg),
+         posangle (deg), dRA (arcsec), dDec (arcsec), offset (deg)]
+    args : tuple
+        Image dimension parameters: `(nxy, dxy)`:
+        - `dxy` is in **radians** for `version in ('chi2', 'vis')`
+        - `dxy` is in **arcseconds** for `version == 'plot'`
+    vis_data : tuple
+        Interferometric visibility data: (u, v, Re, Im, weights).
+    version : str
+        Evaluation mode: `'chi2'`, `'vis'`, or `'plot'`.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        - If `version == 'chi2'`: Scalar goodness-of-fit chi^2 value.
+        - If `version == 'vis'`: 1D complex numpy array of sampled model visibilities.
+        - If `version == 'plot'`: 2D real numpy array of model image brightness.
+    """
+    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, offset = pars
     nxy, dxy = args
     u, v, re, im, w = vis_data
 
-    offset *= deg
+    offset_rad = offset * deg
     inclination *= deg
     posangle *= deg
 
     sigma_arcsec = 10.0**log_sigma
     sigma_rad = sigma_arcsec * arcsec
     ring_rad_rad = ring_rad * arcsec
-    amp_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
+    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
 
     if version in ("chi2", "vis"):
         dRA_rad = dRA * arcsec
         dDec_rad = dDec * arcsec
-        model_img = twod_gaussring_model(amp_ring, offset, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, nxy, dxy, version) 
+        model_img = twod_gaussring_nonuni_model(peak_ring, offset_rad, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, nxy, dxy, version) 
 
         if version == 'chi2':
             chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
@@ -374,7 +478,7 @@ def twod_gaussring_nonuni(pars, args, vis_data, version):
             model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
             return model_vis
     else:
-        model_img = twod_gaussring_model(amp_ring, offset, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, nxy, dxy, version)
+        model_img = twod_gaussring_nonuni_model(peak_ring, offset_rad, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, nxy, dxy, version)
         return model_img
 
 #########################
@@ -996,8 +1100,8 @@ def model_addon(fittype):
         ndim = len(label)
 
     elif fittype == 'twod_gaussring_nonuni':
-        label = ["Ring LogFlux", "Prof. Offset", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-        unit = ["log(Jy)", "degrees", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec"]
+        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "Prof. Offset"]
+        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "degrees"]
         ndim = len(label)
 
     elif fittype == 'twod_gauss1blob':

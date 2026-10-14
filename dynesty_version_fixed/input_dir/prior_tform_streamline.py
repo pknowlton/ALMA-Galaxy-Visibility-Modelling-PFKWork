@@ -130,6 +130,12 @@ COMMON_RING_PRIORS = np.array([
 # 2. MODEL-SPECIFIC BLOB / CLUMP PRIOR RANGES
 # -----------------------------------------------------------------------------
 
+# twod_gaussring_nonuni: Non-Uniform Gaussian Ring (parameter 7)
+# Azimuthal offset angle of the emission peak on the disk [deg] (180 deg periodicity for m=2 mode)
+GAUSSRING_NONUNI_USER_PRIORS = np.array([
+    [0.0, 180.0]    # 7: Profile Azimuthal Offset [deg] (East of North in disk frame)
+], dtype=float)
+
 # twod_gauss1blob: Single Gaussian Blob (parameters 7-10)
 GAUSS1BLOB_USER_PRIORS = np.array([
     [6.030, 8.530], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
@@ -229,7 +235,10 @@ def compile_all_priors():
     r_comp[1, 0] = sigma_to_logsigma(COMMON_RING_PRIORS[1, 0])
     r_comp[1, 1] = sigma_to_logsigma(COMMON_RING_PRIORS[1, 1])
 
-    # 2. twod_gauss1blob (Ring + 1 Blob)
+    # 2. twod_gaussring_nonuni (Ring + Azimuthal Offset)
+    nonuni_ring_ranges = np.vstack([r_comp, GAUSSRING_NONUNI_USER_PRIORS])
+
+    # 3. twod_gauss1blob (Ring + 1 Blob)
     b1_comp = np.copy(GAUSS1BLOB_USER_PRIORS)
     b1_comp[0, 0] = blob_peak_to_logflux(GAUSS1BLOB_USER_PRIORS[0, 0], sigma_bounds=GAUSS1BLOB_USER_PRIORS[1])
     b1_comp[0, 1] = blob_peak_to_logflux(GAUSS1BLOB_USER_PRIORS[0, 1], sigma_bounds=GAUSS1BLOB_USER_PRIORS[1])
@@ -237,7 +246,7 @@ def compile_all_priors():
     b1_comp[1, 1] = sigma_to_logsigma(GAUSS1BLOB_USER_PRIORS[1, 1])
     gauss1blob_ranges = np.vstack([r_comp, b1_comp])
 
-    # 3. twod_gauss2blob (Ring + 2 Clumps)
+    # 4. twod_gauss2blob (Ring + 2 Clumps)
     b2b_comp = np.copy(GAUSS2BLOB_USER_PRIORS)
     for k in (0, 4):
         b2b_comp[k, 0] = blob_peak_to_logflux(GAUSS2BLOB_USER_PRIORS[k, 0], sigma_bounds=GAUSS2BLOB_USER_PRIORS[k + 1])
@@ -246,7 +255,7 @@ def compile_all_priors():
         b2b_comp[k + 1, 1] = sigma_to_logsigma(GAUSS2BLOB_USER_PRIORS[k + 1, 1])
     gauss2blob_ranges = np.vstack([r_comp, b2b_comp])
 
-    # 4. twod_gauss3blob (Ring + 3 Clumps)
+    # 5. twod_gauss3blob (Ring + 3 Clumps)
     b3_comp = np.copy(GAUSS3BLOB_USER_PRIORS)
     for k in (0, 4, 8):
         b3_comp[k, 0] = blob_peak_to_logflux(GAUSS3BLOB_USER_PRIORS[k, 0], sigma_bounds=GAUSS3BLOB_USER_PRIORS[k + 1])
@@ -255,7 +264,7 @@ def compile_all_priors():
         b3_comp[k + 1, 1] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 1])
     gauss3blob_ranges = np.vstack([r_comp, b3_comp])
 
-    # 5. resid_gauss1blob (1 Clump, residual map; no ring block)
+    # 6. resid_gauss1blob (1 Clump, residual map; no ring block)
     resid1_comp = np.copy(RESID1BLOB_USER_PRIORS)
     resid1_comp[0, 0] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 0], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
     resid1_comp[0, 1] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 1], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
@@ -263,7 +272,7 @@ def compile_all_priors():
     resid1_comp[1, 1] = sigma_to_logsigma(RESID1BLOB_USER_PRIORS[1, 1])
     resid1blob_ranges = resid1_comp
 
-    # 6. resid_gauss3blob (3 Clumps, residual map; no ring block)
+    # 7. resid_gauss3blob (3 Clumps, residual map; no ring block)
     resid_comp = np.copy(RESID3BLOB_USER_PRIORS)
     for k in (0, 4, 8):
         resid_comp[k, 0] = blob_peak_to_logflux(RESID3BLOB_USER_PRIORS[k, 0], sigma_bounds=RESID3BLOB_USER_PRIORS[k + 1])
@@ -272,7 +281,7 @@ def compile_all_priors():
         resid_comp[k + 1, 1] = sigma_to_logsigma(RESID3BLOB_USER_PRIORS[k + 1, 1])
     resid3blob_ranges = resid_comp
 
-    # 7. simgauss (Simulated Single Blob Test Model)
+    # 8. simgauss (Simulated Single Blob Test Model)
     sim_comp = np.copy(SIMGAUSS_USER_PRIORS)
     sim_comp[0, 0] = float(np.round(SIMGAUSS_USER_PRIORS[0, 0] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 0] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
     sim_comp[0, 1] = float(np.round(SIMGAUSS_USER_PRIORS[0, 1] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 1] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
@@ -281,6 +290,7 @@ def compile_all_priors():
 
     return (
         r_comp,
+        nonuni_ring_ranges,
         gauss1blob_ranges,
         gauss2blob_ranges,
         gauss3blob_ranges,
@@ -293,6 +303,7 @@ def compile_all_priors():
 # Compile ranges immediately upon module import
 (
     RING_PRIOR_RANGES,
+    NONUNI_RING_PRIOR_RANGES,
     GAUSS1BLOB_PRIOR_RANGES,
     GAUSS2BLOB_PRIOR_RANGES,
     GAUSS3BLOB_PRIOR_RANGES,
@@ -318,6 +329,21 @@ def twod_gaussring_ptform(u):
     u = np.asarray(u)
     low = RING_PRIOR_RANGES[:, 0]
     high = RING_PRIOR_RANGES[:, 1]
+    return low + u * (high - low)
+
+
+#########################
+### 2D Non-Uniform Gaussian Ring (8 parameters)
+#########################
+
+def twod_gaussring_nonuni_ptform(u):
+    """
+    Prior transform for 2D Non-Uniform Gaussian Ring model (8 parameters).
+    Parameters: [Ring LogFlux, Ring LogSigma, Radius, Inc, PA, dRA, dDec, Prof. Offset].
+    """
+    u = np.asarray(u)
+    low = NONUNI_RING_PRIOR_RANGES[:, 0]
+    high = NONUNI_RING_PRIOR_RANGES[:, 1]
     return low + u * (high - low)
 
 
@@ -518,6 +544,13 @@ if __name__ == "__main__":
 
     print("Shared Ring Parameters (Inherited across ALL models):")
     for name, user_val, dyn_val in ring_labels:
+        print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
+
+    print("\nNon-Uniform Ring Additional Parameter (twod_gaussring_nonuni):")
+    nonuni_labels = [
+        ("Profile Azimuthal Offset", f"[{GAUSSRING_NONUNI_USER_PRIORS[0,0]:.1f}, {GAUSSRING_NONUNI_USER_PRIORS[0,1]:.1f}] deg", f"[{NONUNI_RING_PRIOR_RANGES[7,0]:.1f}, {NONUNI_RING_PRIOR_RANGES[7,1]:.1f}] deg"),
+    ]
+    for name, user_val, dyn_val in nonuni_labels:
         print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
 
     print("\nBlob 1 Parameters (twod_gauss1blob / twod_gauss2blob / twod_gauss3blob):")

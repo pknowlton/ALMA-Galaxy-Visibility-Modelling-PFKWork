@@ -360,8 +360,13 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         add_table_row(f"{blob_label} FWHM", "arcsec", FWHM_FACTOR * prior_sigma_range[0], FWHM_FACTOR * prior_sigma_range[1],
                       FWHM_FACTOR * 10.0**pars_bf[idx_sigma], q_bfwhm)
 
-    # 2. Model-Specific Blob Components
-    if fittype == 'twod_gauss1blob':
+    # 2. Model-Specific Blob / Profile Components
+    if fittype == 'twod_gaussring_nonuni':
+        q_off = get_quantiles(res.samples[:, 7])
+        add_table_row("Prof. Offset", "degrees", pt_stream.NONUNI_RING_PRIOR_RANGES[7, 0], pt_stream.NONUNI_RING_PRIOR_RANGES[7, 1],
+                      pars_bf[7], q_off)
+
+    elif fittype == 'twod_gauss1blob':
         add_blob_component("B1", 7, 8,
                            pt_stream.GAUSS1BLOB_PRIOR_RANGES[7],
                            pt_stream.GAUSS1BLOB_USER_PRIORS[0],

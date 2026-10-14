@@ -55,7 +55,7 @@ def dynest_radec(pars, fittype):
     pars : array_like
         Best-fit model parameters.
     fittype : str
-        Model identifier: 'twod_gaussring', 'twod_gauss1blob', 'twod_gauss2blob',
+        Model identifier: 'twod_gaussring', 'twod_gaussring_nonuni', 'twod_gauss1blob', 'twod_gauss2blob',
         'twod_gauss3blob', 'resid_gauss1blob', or 'resid_gauss3blob'.
 
     Returns
@@ -68,9 +68,10 @@ def dynest_radec(pars, fittype):
     # ALMA observation phase center
     phase_cent = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
     
-    if fittype == 'twod_gaussring':
+    if fittype in ('twod_gaussring', 'twod_gaussring_nonuni'):
         # Fitted ring centroid offset
-        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec = pars
+        dRA = pars[5]
+        dDec = pars[6]
         ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
         dynest_coords = np.zeros((1, 2))
         dynest_coords[0, 0] = ngc3351.ra.deg
