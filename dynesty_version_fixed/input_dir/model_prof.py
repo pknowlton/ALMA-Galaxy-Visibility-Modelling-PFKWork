@@ -108,6 +108,10 @@ def gaussring_prof(peak_ring, sigma_ring, rad_ring, radius, dxy):
     """
     return 10**peak_ring * np.exp((-1/2)*((radius-rad_ring)/sigma_ring)**2) * (dxy**2)
 
+def gaussring_nonuni_prof(amp_ring, theta, off_ring, sigma_ring, rad_ring, radius, dxy):
+
+    return ((10**amp)*np.sin((2*theta)+(off))) * np.exp((-1/2)*((radius-rad_ring)/sigma_ring)**2) * (dxy**2)
+
 def gaussblob_prof(peak, sigma, xx, yy, xoff, yoff, dxy):
     """
     Computes the 2D surface brightness of a circular Gaussian cluster/blob.
@@ -139,6 +143,10 @@ def gaussblob_prof(peak, sigma, xx, yy, xoff, yoff, dxy):
         2D array of flux or intensity values for the cluster component.
     """
     return 10**peak * np.exp((-1/2) * (((xx-xoff)/sigma)**2 + ((yy-yoff)/sigma)**2)) * (dxy**2)
+
+#########################
+### Conversion functions
+#########################
 
 def ring_flux_to_peak(log_flux_jy, sigma_rad, rad_rad, inc_rad):
     """
@@ -295,6 +303,78 @@ def twod_gaussring(pars, args, vis_data, version):
             return model_vis
     else:
         model_img = twod_gaussring_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, nxy, dxy, version)
+        return model_img
+
+#########################
+### 2D Non-Uniformm Gaussian Ring
+#########################
+
+def twod_gaussring_nonuni_model(amp, off, sigma, rad, inc, pa, dra, ddec, nxy, dxy, version):
+
+    xx, yy = get_grid(nxy, dxy)
+
+    if version in ("chi2", "vis"):
+        # Deproject x-axis by cos(inclination) to account for disk tilt (all units in radians)
+        xinc = xx / np.cos(inc)
+        radius_vec = np.hypot(xinc, yy)
+
+        theta_vec = np.arctan2(ypa, xinc)
+
+        ring_model_jypix = gaussring_nonuni_prof(amp, theta_vec, off, sigma, rad, radius_vec, dxy)
+        return ring_model_jypix
+
+    elif version == 'plot':
+        # Shift coordinates to account for centroid offsets (all units in arcseconds)
+        xx_shifted = xx - dra
+        yy_shifted = yy - ddec
+
+        # Rotate coordinates by position angle (PA, East of North)
+        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+
+        # Deproject inclined circular ring into an ellipse
+        xinc = xpa / np.cos(inc)
+        radius_vec = np.hypot(xinc, ypa)
+
+        theta_vec = np.arctan2(ypa, xinc)
+
+        # Return surface brightness in Jy/sr (dxy = 1)
+        ring_model_jysr = gaussring_nonuni_prof(amp, theta_vec, off, sigma, rad, radius_vec, 1)
+        return ring_model_jysr
+
+    else:
+        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
+        logging.warning(msg)
+        raise ValueError(msg)
+
+def twod_gaussring_nonuni(pars, args, vis_data, version):
+
+    log_flux, offset, log_sigma, ring_rad, inclination, posangle, dRA, dDec = pars
+    nxy, dxy = args
+    u, v, re, im, w = vis_data
+
+    offset *= deg
+    inclination *= deg
+    posangle *= deg
+
+    sigma_arcsec = 10.0**log_sigma
+    sigma_rad = sigma_arcsec * arcsec
+    ring_rad_rad = ring_rad * arcsec
+    amp_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
+
+    if version in ("chi2", "vis"):
+        dRA_rad = dRA * arcsec
+        dDec_rad = dDec * arcsec
+        model_img = twod_gaussring_model(amp_ring, offset, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, nxy, dxy, version) 
+
+        if version == 'chi2':
+            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
+            return chi2
+        else:
+            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
+            return model_vis
+    else:
+        model_img = twod_gaussring_model(amp_ring, offset, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, nxy, dxy, version)
         return model_img
 
 #########################
@@ -882,6 +962,8 @@ def model_prof(pars, args, vis_data, version, fittype):
 
     if fittype == 'twod_gaussring':
         prof = twod_gaussring(pars, args, vis_data, version)
+    elif fittype == 'twod_gaussring_nonuni':
+        prof = twod_gaussring_nonuni(pars, args, vis_data, version)
     elif fittype == 'twod_gauss1blob':
         prof = twod_gauss1blob(pars, args, vis_data, version)
     elif fittype == 'twod_gauss2blob':
@@ -911,6 +993,11 @@ def model_addon(fittype):
     if fittype == 'twod_gaussring':
         label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
         unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec"]
+        ndim = len(label)
+
+    elif fittype == 'twod_gaussring_nonuni':
+        label = ["Ring LogFlux", "Prof. Offset", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
+        unit = ["log(Jy)", "degrees", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec"]
         ndim = len(label)
 
     elif fittype == 'twod_gauss1blob':
