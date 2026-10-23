@@ -89,6 +89,7 @@ def test_summary_table_rendering():
         ('twod_gauss1blob_2peak', 13),
         ('twod_gauss1blob_2peak_dp', 15),
         ('twod_gauss3blob', 19),
+        ('twod_gauss3blob_nonuni', 20),
         ('simgauss', 7)
     ]
 
@@ -250,11 +251,71 @@ def test_nonuni_ring_properties():
 
     print("PASS: Non-uniform ring mathematical properties, flux conservation, and transforms verified.")
 
+def test_nonuni_3blob_properties():
+    """Verify non-uniform ring + 3 blobs model, transforms, parity with components, and coordinates."""
+    from model_prof import model_addon, twod_gauss3blob_nonuni_model, model_prof
+    from radec_calc import dynest_radec
+    import prior_tform_streamline as pt
+
+    # 1. Check model metadata
+    labels, units, ndim = model_addon('twod_gauss3blob_nonuni')
+    assert ndim == 20, f"Expected 20 parameters, got {ndim}"
+    assert len(labels) == 20
+    assert len(units) == 20
+    assert labels[7] == "Prof. Offset"
+    assert labels[8] == "B1 LogFlux"
+
+    # Also check alias
+    l_alias, u_alias, ndim_alias = model_addon('twod_gaussring_nonuni_3blob')
+    assert ndim_alias == 20
+
+    # 2. Check prior transform parity
+    u_test = np.random.uniform(0.01, 0.99, size=20)
+    p_3b_nonuni = pt.twod_gauss3blob_nonuni_ptform(u_test)
+    assert len(p_3b_nonuni) == 20
+
+    # First 8 parameters must match twod_gaussring_nonuni_ptform
+    p_ring_nonuni = pt.twod_gaussring_nonuni_ptform(u_test[:8])
+    np.testing.assert_allclose(p_3b_nonuni[:8], p_ring_nonuni, rtol=1e-12, atol=1e-12,
+                               err_msg="Ring block (0-7) does not match twod_gaussring_nonuni_ptform!")
+
+    # Clump parameters (8-19) must match twod_gauss3blob_ptform (7-18) given the same u
+    u_for_3b = np.concatenate([u_test[:7], u_test[8:]])
+    p_3b = pt.twod_gauss3blob_ptform(u_for_3b)
+    np.testing.assert_allclose(p_3b_nonuni[8:], p_3b[7:], rtol=1e-12, atol=1e-12,
+                               err_msg="Clump block (8-19) does not match twod_gauss3blob_ptform!")
+
+    # 3. Check 2D model evaluation
+    nxy = 128
+    dxy = 0.1
+    img = twod_gauss3blob_nonuni_model(
+        7.0, np.radians(30.0), 1.0, 6.0, np.radians(45.0), np.radians(20.0), 0.1, -0.2,
+        6.5, 0.2, 5.0, np.radians(350.0),
+        6.4, 0.2, 5.2, np.radians(190.0),
+        6.3, 0.2, 4.8, np.radians(165.0),
+        nxy, dxy, 'plot'
+    )
+    assert img.shape == (nxy, nxy)
+    assert np.all(np.isfinite(img))
+    assert np.all(img >= 0.0), "Combined non-uniform ring + clumps model must be non-negative!"
+
+    # 4. Check radec_calc
+    coords = dynest_radec(p_3b_nonuni, 'twod_gauss3blob_nonuni')
+    assert coords.shape == (3, 2)
+    assert np.all(np.isfinite(coords))
+
+    # Also test alias
+    coords_alias = dynest_radec(p_3b_nonuni, 'twod_gaussring_nonuni_3blob')
+    np.testing.assert_allclose(coords, coords_alias)
+
+    print("PASS: Non-uniform ring + 3 blobs model, transforms, and coordinates verified.")
+
 if __name__ == '__main__':
     test_convolve_beam_orientation()
     test_safe_add_beam()
     test_summary_table_rendering()
     test_nonuni_ring_properties()
+    test_nonuni_3blob_properties()
     test_uvplot_generation()
     test_runplot_evidence_limits()
     print("\nALL VISUALIZATION AND POST-PROCESSING TESTS PASSED!")

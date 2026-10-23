@@ -264,7 +264,10 @@ def compile_all_priors():
         b3_comp[k + 1, 1] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 1])
     gauss3blob_ranges = np.vstack([r_comp, b3_comp])
 
-    # 6. resid_gauss1blob (1 Clump, residual map; no ring block)
+    # 6. twod_gauss3blob_nonuni (Non-Uniform Ring + 3 Clumps)
+    gauss3blob_nonuni_ranges = np.vstack([nonuni_ring_ranges, b3_comp])
+
+    # 7. resid_gauss1blob (1 Clump, residual map; no ring block)
     resid1_comp = np.copy(RESID1BLOB_USER_PRIORS)
     resid1_comp[0, 0] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 0], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
     resid1_comp[0, 1] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 1], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
@@ -272,7 +275,7 @@ def compile_all_priors():
     resid1_comp[1, 1] = sigma_to_logsigma(RESID1BLOB_USER_PRIORS[1, 1])
     resid1blob_ranges = resid1_comp
 
-    # 7. resid_gauss3blob (3 Clumps, residual map; no ring block)
+    # 8. resid_gauss3blob (3 Clumps, residual map; no ring block)
     resid_comp = np.copy(RESID3BLOB_USER_PRIORS)
     for k in (0, 4, 8):
         resid_comp[k, 0] = blob_peak_to_logflux(RESID3BLOB_USER_PRIORS[k, 0], sigma_bounds=RESID3BLOB_USER_PRIORS[k + 1])
@@ -281,7 +284,7 @@ def compile_all_priors():
         resid_comp[k + 1, 1] = sigma_to_logsigma(RESID3BLOB_USER_PRIORS[k + 1, 1])
     resid3blob_ranges = resid_comp
 
-    # 8. simgauss (Simulated Single Blob Test Model)
+    # 9. simgauss (Simulated Single Blob Test Model)
     sim_comp = np.copy(SIMGAUSS_USER_PRIORS)
     sim_comp[0, 0] = float(np.round(SIMGAUSS_USER_PRIORS[0, 0] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 0] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
     sim_comp[0, 1] = float(np.round(SIMGAUSS_USER_PRIORS[0, 1] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 1] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
@@ -294,6 +297,7 @@ def compile_all_priors():
         gauss1blob_ranges,
         gauss2blob_ranges,
         gauss3blob_ranges,
+        gauss3blob_nonuni_ranges,
         resid1blob_ranges,
         resid3blob_ranges,
         sim_comp
@@ -307,6 +311,7 @@ def compile_all_priors():
     GAUSS1BLOB_PRIOR_RANGES,
     GAUSS2BLOB_PRIOR_RANGES,
     GAUSS3BLOB_PRIOR_RANGES,
+    GAUSS3BLOB_NONUNI_PRIOR_RANGES,
     RESID1BLOB_PRIOR_RANGES,
     RESID3BLOB_PRIOR_RANGES,
     SIMGAUSS_PRIOR_RANGES
@@ -441,6 +446,47 @@ def twod_gauss3blob_ptform(u):
 
 
 #########################
+### 2D Non-Uniform Gaussian Ring + 3 Gaussian Blobs (20 parameters)
+#########################
+
+def twod_gauss3blob_nonuni_ptform(u):
+    r"""
+    Prior transform for 2D Non-Uniform Gaussian Ring + 3 Gaussian Blobs (20 parameters).
+    Parameters:
+      0-6: Shared Ring (LogFlux, LogSigma, Rad, Inc, PA, dRA, dDec)
+      7:   Non-Uniform Profile Azimuthal Offset [0.0, 180.0] deg
+      8-11:  Blob 1 [LogFlux, LogSigma, Dist, Angle] (North clump [330.0, 390.0] deg)
+      12-15: Blob 2 [LogFlux, LogSigma, Dist, Angle] (South-West clump [177.0, 205.0] deg)
+      16-19: Blob 3 [LogFlux, LogSigma, Dist, Angle] (South-East clump [155.0, 177.0] deg)
+    """
+    u = np.asarray(u)
+    v = np.empty(20, dtype=float)
+    low = GAUSS3BLOB_NONUNI_PRIOR_RANGES[:, 0]
+    high = GAUSS3BLOB_NONUNI_PRIOR_RANGES[:, 1]
+
+    # Ring (0-6) and Profile Offset (7)
+    v[:8] = low[:8] + u[:8] * (high[:8] - low[:8])
+
+    # Blob 1: North clump (disk angle ~348 deg)
+    v[8:10] = low[8:10] + u[8:10] * (high[8:10] - low[8:10])
+    v[10] = uniform_area_radius(u[10], low[10], high[10])
+    v[11] = low[11] + u[11] * (high[11] - low[11])
+
+    # Blob 2: South-West clump (disk angle ~182-185 deg)
+    v[12:14] = low[12:14] + u[12:14] * (high[12:14] - low[12:14])
+    v[14] = uniform_area_radius(u[14], low[14], high[14])
+    v[15] = low[15] + u[15] * (high[15] - low[15])
+
+    # Blob 3: South-East clump (disk angle ~171 deg)
+    v[16:18] = low[16:18] + u[16:18] * (high[16:18] - low[16:18])
+    v[18] = uniform_area_radius(u[18], low[18], high[18])
+    v[19] = low[19] + u[19] * (high[19] - low[19])
+    return v
+
+twod_gaussring_nonuni_3blob_ptform = twod_gauss3blob_nonuni_ptform
+
+
+#########################
 ### Residual map + 1 Gaussian Blob (4 parameters)
 #########################
 
@@ -546,14 +592,14 @@ if __name__ == "__main__":
     for name, user_val, dyn_val in ring_labels:
         print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
 
-    print("\nNon-Uniform Ring Additional Parameter (twod_gaussring_nonuni):")
+    print("\nNon-Uniform Ring Additional Parameter (twod_gaussring_nonuni / twod_gauss3blob_nonuni):")
     nonuni_labels = [
         ("Profile Azimuthal Offset", f"[{GAUSSRING_NONUNI_USER_PRIORS[0,0]:.1f}, {GAUSSRING_NONUNI_USER_PRIORS[0,1]:.1f}] deg", f"[{NONUNI_RING_PRIOR_RANGES[7,0]:.1f}, {NONUNI_RING_PRIOR_RANGES[7,1]:.1f}] deg"),
     ]
     for name, user_val, dyn_val in nonuni_labels:
         print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
 
-    print("\nBlob 1 Parameters (twod_gauss1blob / twod_gauss2blob / twod_gauss3blob):")
+    print("\nBlob 1 Parameters (twod_gauss1blob / twod_gauss2blob / twod_gauss3blob / twod_gauss3blob_nonuni):")
     b1_labels = [
         ("Blob 1 Surface Brightness", f"[{GAUSS1BLOB_USER_PRIORS[0,0]:.2f}, {GAUSS1BLOB_USER_PRIORS[0,1]:.2f}] log(Jy/sr)", f"[{GAUSS1BLOB_PRIOR_RANGES[7,0]:.2f}, {GAUSS1BLOB_PRIOR_RANGES[7,1]:.2f}] log(Jy)"),
         ("Blob 1 Width (sigma)", f"[{GAUSS1BLOB_USER_PRIORS[1,0]:.2f}, {GAUSS1BLOB_USER_PRIORS[1,1]:.2f}] arcsec", f"[{GAUSS1BLOB_PRIOR_RANGES[8,0]:.3f}, {GAUSS1BLOB_PRIOR_RANGES[8,1]:.3f}] log(arcsec)"),
@@ -563,7 +609,7 @@ if __name__ == "__main__":
     for name, user_val, dyn_val in b1_labels:
         print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
 
-    print("\nBlob 2 Parameters (twod_gauss2blob / twod_gauss3blob):")
+    print("\nBlob 2 Parameters (twod_gauss2blob / twod_gauss3blob / twod_gauss3blob_nonuni):")
     b2_labels = [
         ("Blob 2 Surface Brightness", f"[{GAUSS2BLOB_USER_PRIORS[4,0]:.2f}, {GAUSS2BLOB_USER_PRIORS[4,1]:.2f}] log(Jy/sr)", f"[{GAUSS2BLOB_PRIOR_RANGES[11,0]:.2f}, {GAUSS2BLOB_PRIOR_RANGES[11,1]:.2f}] log(Jy)"),
         ("Blob 2 Width (sigma)", f"[{GAUSS2BLOB_USER_PRIORS[5,0]:.2f}, {GAUSS2BLOB_USER_PRIORS[5,1]:.2f}] arcsec", f"[{GAUSS2BLOB_PRIOR_RANGES[12,0]:.3f}, {GAUSS2BLOB_PRIOR_RANGES[12,1]:.3f}] log(arcsec)"),
@@ -573,7 +619,7 @@ if __name__ == "__main__":
     for name, user_val, dyn_val in b2_labels:
         print(f"  {name:<30} {user_val:<22} {dyn_val:<24}")
 
-    print("\nBlob 3 Parameters (twod_gauss3blob):")
+    print("\nBlob 3 Parameters (twod_gauss3blob / twod_gauss3blob_nonuni):")
     b3_labels = [
         ("Blob 3 Surface Brightness", f"[{GAUSS3BLOB_USER_PRIORS[8,0]:.2f}, {GAUSS3BLOB_USER_PRIORS[8,1]:.2f}] log(Jy/sr)", f"[{GAUSS3BLOB_PRIOR_RANGES[15,0]:.2f}, {GAUSS3BLOB_PRIOR_RANGES[15,1]:.2f}] log(Jy)"),
         ("Blob 3 Width (sigma)", f"[{GAUSS3BLOB_USER_PRIORS[9,0]:.2f}, {GAUSS3BLOB_USER_PRIORS[9,1]:.2f}] arcsec", f"[{GAUSS3BLOB_PRIOR_RANGES[16,0]:.3f}, {GAUSS3BLOB_PRIOR_RANGES[16,1]:.3f}] log(arcsec)"),

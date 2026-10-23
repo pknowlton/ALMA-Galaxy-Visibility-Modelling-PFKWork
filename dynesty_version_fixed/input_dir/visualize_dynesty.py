@@ -408,6 +408,24 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
             add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
                           pars_bf[idx_base + 3], q_ang)
 
+    elif fittype in ('twod_gauss3blob_nonuni', 'twod_gaussring_nonuni_3blob'):
+        q_off = get_quantiles(res.samples[:, 7])
+        add_table_row("Prof. Offset", "degrees", pt_stream.NONUNI_RING_PRIOR_RANGES[7, 0], pt_stream.NONUNI_RING_PRIOR_RANGES[7, 1],
+                      pars_bf[7], q_off)
+        for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
+            idx_base = 8 + (k - 1) * 4
+            u_base = (k - 1) * 4
+            add_blob_component(name, idx_base, idx_base + 1,
+                               pt_stream.GAUSS3BLOB_NONUNI_PRIOR_RANGES[idx_base],
+                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base],
+                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 1])
+            q_dist = get_quantiles(res.samples[:, idx_base + 2])
+            add_table_row(f"{name} Dist", "arcsec", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 1],
+                          pars_bf[idx_base + 2], q_dist)
+            q_ang = get_quantiles(res.samples[:, idx_base + 3])
+            add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
+                          pars_bf[idx_base + 3], q_ang)
+
     elif fittype == 'resid_gauss1blob':
         add_blob_component("B1", 0, 1,
                            pt_stream.RESID1BLOB_PRIOR_RANGES[0],

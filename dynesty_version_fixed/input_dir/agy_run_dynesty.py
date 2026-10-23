@@ -203,7 +203,7 @@ def main():
     periodic_dims = []
     if fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss1blob', 'resid_gauss3blob'):
         periodic_dims.append(4)
-    if fittype == 'twod_gaussring_nonuni':
+    if fittype in ('twod_gaussring_nonuni', 'twod_gauss3blob_nonuni', 'twod_gaussring_nonuni_3blob'):
         periodic_dims.append(7)
     if fittype == 'twod_gauss1blob_2peak_dp':
         periodic_dims.append(14)
