@@ -183,8 +183,8 @@ RESID1BLOB_USER_PRIORS = np.array([
     # Blob 1:
     [6.030, 8.530], # 0:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 1:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.64, 5.64],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [140.0, 165.0]  # 3:  Blob 1 Angle [deg] (East of North, CCW)
+    [7.5, 8.5],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [167.5, 175.0]  # 3:  Blob 1 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
 # resid_gauss3blob: Three Distinct Clumps on a residual map (12 parameters).
@@ -193,18 +193,18 @@ RESID3BLOB_USER_PRIORS = np.array([
     # Blob 1:
     [6.030, 8.530], # 0:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 1:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [5.0, 7.2],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [365.0, 420.0], # 3:  Blob 1 Angle [deg] (East of North, CCW)
+    [2.5, 5.0],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [230.0, 310.0], # 3:  Blob 1 Angle [deg] (East of North, CCW)
     # Blob 2:
     [6.030, 8.530], # 4:  Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 5:  Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [1.0, 5.0],    # 6:  Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [220.0, 320.0], # 7:  Blob 2 Angle [deg] (East of North, CCW)
+    [2.5, 5.0],    # 6:  Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [230.0, 310.0], # 7:  Blob 2 Angle [deg] (East of North, CCW)
     # Blob 3:
     [6.030, 8.530], # 8:  Blob 3 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
     [0.05, 0.4],    # 9:  Blob 3 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [7.0, 10.0],    # 10: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
-    [155.0, 180.0]  # 11: Blob 3 Angle [deg] (East of North, CCW)
+    [2.5, 5.0],    # 10: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [230.0, 310.0]  # 11: Blob 3 Angle [deg] (East of North, CCW)
 ], dtype=float)
 
 # simgauss: Single simulated Gaussian blob test model (7 parameters)
