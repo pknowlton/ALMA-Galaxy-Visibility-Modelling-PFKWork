@@ -1,4 +1,4 @@
-"""
+r"""
 Bayesian Visibility Modeling with Dynesty Dynamic Nested Sampling
 ===================================================================
 This script performs Bayesian parameter estimation and model selection by fitting
@@ -23,10 +23,15 @@ Key Concepts:
   to single threads to prevent CPU oversubscription.
 
 Usage:
-    python run_dynesty.py <fittype> [--nlive 500] [--maxbatch 5] [--dlogz 0.1] [--seed 42] [--resume]
+    python run_dynesty.py <fittype> [--nlive 250] [--maxbatch 5] [--dlogz 0.1] [--seed 42] [--no-resume]
+
+    A run resumes from ./output/<fittype>_checkpoint.save when that file exists;
+    pass --no-resume to ignore it and start fresh.
 
 Example:
-    python run_dynesty.py twod_gaussring --nlive 500 --maxbatch 5 --dlogz 0.1 --seed 42
+    python run_dynesty.py twod_gaussring --nlive 250 --maxbatch 5 --dlogz 0.1 --seed 42
+
+The number of CPU cores used by the multiprocessing Pool is NCORES in config.py.
 """
 
 import os
@@ -37,14 +42,11 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-import sys
 import time
 import logging
 import argparse
-import psutil
 import numpy as np
 import multiprocessing
-import dynesty
 from dynesty.pool import Pool
 from dynesty import utils as dyfunc
 from dynesty import DynamicNestedSampler
@@ -52,13 +54,14 @@ from dynesty import DynamicNestedSampler
 from galario.double import get_image_size
 from model_prof import model_prof, model_addon
 from model_defs import get_spec
+from config import NCORES
 import prior_tform
 
 # Module-level variable to store visibility data, avoiding inter-process serialization overhead
 GLOBAL_DATA = None
 
 def initialize_data(data_file):
-    """
+    r"""
     Loads and prepares interferometric visibility data for Galario.
 
     Reads baseline coordinates $(u, v)$, complex visibilities $(\text{Re}, \text{Im})$,
@@ -104,7 +107,7 @@ def initialize_data(data_file):
     return args, vis_data
 
 def log_likelihood(pars, args, fittype):
-    """
+    r"""
     Calculates the log-likelihood probability $\ln \mathcal{L}$ under a Gaussian noise model.
 
     Evaluates the model visibilities via Galario and computes the total $\chi^2$ sum:
@@ -141,12 +144,12 @@ def main():
         description="Run Dynesty dynamic nested sampling for ALMA visibility modeling."
     )
     parser.add_argument("fittype", type=str, help="Model profile identifier (e.g., 'twod_gaussring').")
-    parser.add_argument("--nlive", type=int, default=250, help="Initial number of live points (default: 500).")
+    parser.add_argument("--nlive", type=int, default=250, help="Initial number of live points (default: 250).")
     parser.add_argument("--maxbatch", type=int, default=5, help="Maximum number of dynamic batches to add (default: 5).")
     parser.add_argument("--dlogz", type=float, default=0.1, help="Target evidence stopping criterion dlogz (default: 0.1).")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42).")
-    parser.add_argument("--resume", action="store_true", default=True, help="Resume from checkpoint file if it exists.")
-    parser.add_argument("--no-resume", dest="resume", action="store_false", help="Do not resume from existing checkpoint.")
+    parser.add_argument("--no-resume", dest="resume", action="store_false",
+                        help="Ignore any existing checkpoint and start fresh (default: resume from the checkpoint if it exists).")
     pargs = parser.parse_args()
 
     fittype = pargs.fittype
@@ -210,8 +213,11 @@ def main():
     check_file = './output/' + fittype + '_checkpoint.save'
     fit_start = time.perf_counter()
 
-    logging.info('Initializing Dynesty DynamicNestedSampler with dynesty.pool.Pool(16)...')
-    with Pool(16, log_likelihood, prior_transform, logl_args=(args, fittype)) as pool:
+    logging.info('Initializing Dynesty DynamicNestedSampler with dynesty.pool.Pool(%d)...', NCORES)
+    with Pool(NCORES, log_likelihood, prior_transform, logl_args=(args, fittype)) as pool:
+        sampler = None
+
+        # Try to pick up where a previous run left off
         if pargs.resume and os.path.exists(check_file):
             logging.info("Restoring existing sampler state from checkpoint: %s", check_file)
             try:
@@ -224,23 +230,10 @@ def main():
                 )
             except Exception as e:
                 logging.warning(f"Could not resume from checkpoint ({e}). Starting fresh sampler.")
-                sampler = DynamicNestedSampler(
-                    pool.loglike,
-                    pool.prior_transform,
-                    ndim,
-                    nlive=nlive,
-                    bound='multi',
-                    sample='rwalk',
-                    periodic=periodic,
-                    pool=pool,
-                    queue_size=16
-                )
-                sampler.run_nested(
-                    dlogz_init=dlogz,
-                    maxbatch=maxbatch,
-                    checkpoint_file=check_file
-                )
-        else:
+                sampler = None
+
+        # Fresh start (no checkpoint, --no-resume, or the resume attempt above failed)
+        if sampler is None:
             sampler = DynamicNestedSampler(
                 pool.loglike,
                 pool.prior_transform,
@@ -250,7 +243,7 @@ def main():
                 sample='rwalk',
                 periodic=periodic,
                 pool=pool,
-                queue_size=16
+                queue_size=NCORES
             )
             sampler.run_nested(
                 dlogz_init=dlogz,

@@ -42,16 +42,17 @@ except ImportError:
 from matplotlib import rc
 from galario.double import get_image_size
 from casatools import table
-from casatasks import exportfits, imsubimage, tclean, split, impbcor, imsmooth
+from casatasks import exportfits, tclean, impbcor
 
 import argparse
-import dynesty
 from dynesty import DynamicNestedSampler
 from dynesty import utils as dyfunc
 from dynesty import plotting as dyplot
 from model_prof import model_prof, model_addon
 from model_defs import get_spec
-from radec_calc import sun_radec, dynest_radec, make_model_wcs
+from radec_calc import dynest_radec, make_model_wcs
+from config import (PHASE_CENTER_RA, PHASE_CENTER_DEC, CASA_MS_FULL, CASA_MS_XX, CASA_MS_YY,
+                    CASA_DATA_IMAGE, CASA_RESID_IMAGE)
 import prior_tform as pt_stream
 from uvplot import UVTable
 from matplotlib.backends.backend_pdf import PdfPages
@@ -119,7 +120,7 @@ def img_prepper(fitsimg):
     data : numpy.ndarray
         2D image cutout array in surface brightness units ($\text{Jy}/\text{sr}$).
     """
-    center = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
+    center = SkyCoord(PHASE_CENTER_RA, PHASE_CENTER_DEC, frame='icrs')
     box_bkg = [36 * u.arcsecond, 36 * u.arcsecond]
 
     im = fits.open(fitsimg)[0]
@@ -493,9 +494,15 @@ def main():
         description="Visualize Dynesty results, compute visibility residuals, and generate CASA images."
     )
     parser.add_argument("fittype", type=str, help="Model configuration identifier (e.g. 'twod_gaussring').")
+    parser.add_argument(
+        "--casa-dir", required=True,
+        help="Folder holding the CASA measurement sets for the dataset that was fitted, "
+             "e.g. 'casa_dir_freq' or 'casa_dir_freq_residiii'. The launch scripts derive this from the data table name."
+    )
     pargs = parser.parse_args()
 
     fittype = pargs.fittype
+    casa_dir = pargs.casa_dir
 
     logfile = './output/' + fittype + '_dynesty.log'
     logging.basicConfig(
@@ -508,6 +515,13 @@ def main():
     )
     logging.info("==========Visualization Output==========")
     logging.info('Fittype: %s', fittype)
+
+    # Fail immediately (before any plotting) if the CASA folder for this dataset is missing
+    if not os.path.isdir(casa_dir):
+        msg = f"CASA folder '{casa_dir}' not found in {os.getcwd()}. Check --casa-dir."
+        logging.error(msg)
+        raise FileNotFoundError(msg)
+    logging.info(f"CASA folder: {casa_dir}")
 
     # --------------------------------------------------------------------------
     # 1. Restore Dynesty Checkpoint & Coherent Best-Fit Parameter Selection
@@ -584,12 +598,13 @@ def main():
     # --------------------------------------------------------------------------
     # 3. Load Observed Visibilities for Residual Calculation
     # --------------------------------------------------------------------------
-    ms = './casa_dir_freq_residii/M95_C5+C2_cont93_uvtable.ms'
-    msx = './casa_dir_freq_residii/M95_C5+C2_cont93_trimmedXX.ms'
-    msy = './casa_dir_freq_residii/M95_C5+C2_cont93_trimmedYY.ms'
+    # File names inside the CASA folder are set in config.py; the folder itself comes from --casa-dir
+    ms = os.path.join(casa_dir, CASA_MS_FULL)
+    msx = os.path.join(casa_dir, CASA_MS_XX)
+    msy = os.path.join(casa_dir, CASA_MS_YY)
 
-    data_imgname = './casa_dir_freq_residii/M95_cont93GHz_auto'
-    resid_imgname = './casa_dir_freq_residii/M95_cont93GHz_residual'
+    data_imgname = os.path.join(casa_dir, CASA_DATA_IMAGE)
+    resid_imgname = os.path.join(casa_dir, CASA_RESID_IMAGE)
 
     # Ingest XX baseline visibilities with frequency awareness
     raw_x = np.require(np.loadtxt(msx + '.uvtable.txt', unpack=True), requirements='C')
@@ -787,7 +802,7 @@ def main():
     ring_model = convolve_model_with_beam(ring_model_intrinsic, bmaj_deg, bmin_deg, bpa_deg, pixarcsec)
     logging.info('Convolved intrinsic model with restoring beam...')
 
-    phase_center = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
+    phase_center = SkyCoord(PHASE_CENTER_RA, PHASE_CENTER_DEC, frame='icrs')
     mod_wcs = make_model_wcs(phase_center.ra.deg, phase_center.dec.deg, pixarcsec, shape=(numpix, numpix))
 
     # Pre-calculate celestial coordinates for the ring peak profile (white dashed ellipse)
@@ -814,11 +829,7 @@ def main():
     ring_model /= 1e6
     ring_model_intrinsic_mjy = ring_model_intrinsic / 1e6
 
-    ymc_ids = [15, 6, 18]
-    sun_coords = sun_radec(ymc_ids)
     dynest_coords = dynest_radec(pars_bf, fittype)
-
-    sun_ra, sun_dec = zip(*sun_coords)
     dynest_ra, dynest_dec = zip(*dynest_coords)
 
     # --- Combined 2x3 Comparison (Data, Model, Residuals with & without Overlays) ---

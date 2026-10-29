@@ -14,9 +14,17 @@
 #   $1 - IN_DIR:    Path to directory containing input Python scripts and modules.
 #   $2 - OUT_DIR:   Persistent destination directory for output logs, models, and plots.
 #   $3 - DATA_PATH: Absolute path to the calibrated UV visibility table (ASCII format).
-#   $4 - FITTYPE:   Model identifier defining the geometry (e.g., 'twod_gaussring', 'twod_gaussring_nonuni',
-#                   'twod_gauss1blob', 'twod_gauss1blob_2peak', 'twod_gauss1blob_2peak_dp',
-#                   'twod_gauss2blob', 'twod_gauss3blob', 'twod_gauss3blob_nonuni', 'resid_gauss1blob', 'resid_gauss3blob', 'simgauss').
+#   $4 - FITTYPE:   Model identifier (see input_dir/model_defs.py for the full list,
+#                   e.g. 'twod_gaussring', 'twod_gauss3blob_nonuni', 'resid_gauss3blob').
+#
+# CASA folder:
+#   The folder of CASA products used by the visualiser is derived from the data
+#   file name (everything after 'uvtable_'), and must exist inside IN_DIR:
+#       M95_C5+C2_cont93_uvtable_freq.txt           ->  casa_dir_freq
+#       M95_C5+C2_cont93_uvtable_freq_residiii.txt  ->  casa_dir_freq_residiii
+#   (config.py has the same rule in Python; keep the two in step.)
+#
+# Exit code: the first failure from run_dynesty.py / visualize_dynesty.py (0 if both succeed).
 #
 # Environment:
 #   Requires the 'pk_env_38' Conda environment (Python <= 3.8) containing Galario,
@@ -70,6 +78,27 @@ trap cleanup EXIT
 # ------------------------------------------------------------------------------
 # Create output folder within scratch staging area and copy visibility data and code.
 mkdir -p "${STAGING_DIR}/output"
+
+# Work out which CASA folder goes with this data table (rule described at the top)
+DATA_FILE=$(basename "${DATA_PATH}")
+DATA_STEM="${DATA_FILE%.*}"
+case "${DATA_STEM}" in
+    *uvtable_*) CASA_DIR="casa_dir_${DATA_STEM#*uvtable_}" ;;
+    *) echo "ERROR: cannot derive CASA folder: '${DATA_FILE}' does not contain 'uvtable_'" >&2; exit 2 ;;
+esac
+echo "CASA folder:      $CASA_DIR"
+
+# Check the inputs exist now, rather than failing deep inside a long run
+# (the exit trap above still saves the log and cleans up scratch)
+if [ ! -f "${DATA_PATH}" ]; then
+    echo "ERROR: data table not found: ${DATA_PATH}" >&2
+    exit 3
+fi
+if [ ! -d "${IN_DIR}/${CASA_DIR}" ]; then
+    echo "ERROR: CASA folder not found: ${IN_DIR}/${CASA_DIR}" >&2
+    exit 3
+fi
+
 cp "${DATA_PATH}" "${STAGING_DIR}/uvtable.txt"
 cp -r "${IN_DIR}/"* "${STAGING_DIR}/"
 
@@ -82,18 +111,24 @@ cd "${STAGING_DIR}"
 
 pwd
 ls
-ls casa_dir_freq_residii
+ls "${CASA_DIR}"
 
 echo "Starting run at $(date)"
 
 # Step 4a: Run dynamic nested sampling with Dynesty to fit the model to UV visibilities
-conda run -n pk_env_38 python run_dynesty.py $4
+conda run -n pk_env_38 python run_dynesty.py "${FITTYPE}"
+RUN_CODE=$?
 
 # Step 4b: Run post-processing to generate diagnostic plots, CASA CLEAN images, and PDFs
-conda run -n pk_env_38 python visualize_dynesty.py $4
+# (still runs if 4a failed, so a partial checkpoint can be inspected)
+conda run -n pk_env_38 python visualize_dynesty.py "${FITTYPE}" --casa-dir "${CASA_DIR}"
+VIS_CODE=$?
 
-# Capture the exit status of the Python execution pipeline
-EXIT_CODE=$?
+# Report the first failure (previously only the visualiser's status was reported)
+EXIT_CODE=${RUN_CODE}
+if [ "${EXIT_CODE}" -eq 0 ]; then
+    EXIT_CODE=${VIS_CODE}
+fi
 
 echo "Run finished with code ${EXIT_CODE} at $(date)"
 exit $EXIT_CODE

@@ -21,6 +21,7 @@ from astropy.coordinates import SkyCoord
 import pandas as pd
 import logging
 from model_defs import get_spec
+from config import PHASE_CENTER_RA, PHASE_CENTER_DEC
 
 def sun_radec(ymc_ids):
     """
@@ -72,8 +73,8 @@ def dynest_radec(pars, fittype):
     logging.info('Fittype: %s', fittype)
     spec = get_spec(fittype)
 
-    # ALMA observation phase center
-    phase_cent = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
+    # ALMA observation phase center (set in config.py)
+    phase_cent = SkyCoord(PHASE_CENTER_RA, PHASE_CENTER_DEC, frame='icrs')
 
     posangle, dRA, dDec = spec.geometry_params(pars)
     ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)

@@ -88,6 +88,7 @@ dyn_version/
 ├── launch_fittings_scratch_pfk.sh          # Core shell runner: scratch staging, Conda activation & cleanup
 └── input_dir/                              # Code and model definitions executed on compute node
     ├── run_dynesty.py                  # Main Dynesty sampling driver with multiprocessing Pool
+    ├── config.py                           # Shared settings: core count, phase centre, CASA file names, CASA-folder naming rule
     ├── model_defs.py                       # Model registry: defines every fittype (ring, blobs, geometry, labels) in one place
     ├── model_prof.py                       # Generic 2D brightness model builder & Galario interface
     ├── prior_tform.py                      # Prior ranges and unit hypercube transformations for Dynesty
@@ -103,7 +104,6 @@ The pipeline uses two Python environments to balance dependency constraints (e.g
 Used by `launch_headless_scratch.py` on client machines or CANFAR login nodes:
 - `canfar` / `skaha`
 - `numpy`
-- `pandas`
 
 ### 2. Execution Environment (`pk_env_38` / Python $\le 3.8$)
 Used inside the compute containers / batch jobs:
@@ -124,11 +124,23 @@ Used inside the compute containers / batch jobs:
 To spawn a remote batch session on CANFAR:
 
 ```bash
-# Syntax: python launch_headless_scratch.py <session_name> <fittype>
-python launch_headless_scratch.py ngc3351-gaussring-01 twod_gaussring
+# Syntax: python launch_headless_scratch.py <session_name> <fittype> <data> [--out-dir DIR] [--dry-run]
+python launch_headless_scratch.py ngc3351-gaussring-01 twod_gaussring M95_C5+C2_cont93_uvtable_freq.txt
+python launch_headless_scratch.py ngc3351-resid-01 resid_gauss3blob M95_C5+C2_cont93_uvtable_freq_residiii.txt
 ```
 
-This launches a headless container with 16 CPU cores, executes the full pipeline in node-local scratch space, and outputs results to `/arc/home/<user>/dynest_product_dir/<session_name>/`.
+`<data>` is a file name inside the data folder set at the top of `launch_headless_scratch.py` (or a full path). The CASA folder used for the residual images is chosen automatically from the data file name (everything after `uvtable_`):
+
+| Data table | CASA folder (inside `input_dir/`) |
+|---|---|
+| `M95_C5+C2_cont93_uvtable_freq.txt` | `casa_dir_freq` |
+| `M95_C5+C2_cont93_uvtable_freq_residiii.txt` | `casa_dir_freq_residiii` |
+
+Add `--dry-run` to check the model name, data file and CASA folder without starting a session. The launcher refuses unknown model names and data names that do not contain `uvtable_`.
+
+This launches a headless container with `NCORES` CPU cores (set in `input_dir/config.py`, currently 16), executes the full pipeline in node-local scratch space, and outputs results to `<out-dir>/<session_name>/` (default `/arc/projects/uvdisk_fit/dynest_product_dir/`).
+
+Shared settings (core count, phase centre, CASA file names) live in `input_dir/config.py`. A run resumes from its checkpoint automatically if one exists; to start over, run `run_dynesty.py` with `--no-resume`.
 
 ### Supported Model Profiles (`fittype`)
 

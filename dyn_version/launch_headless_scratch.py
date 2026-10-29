@@ -1,90 +1,98 @@
-"""
-Launch Headless Scratch Session for CANFAR Skaha
-=================================================
-This script launches an asynchronous "headless" batch compute container on the
-CANFAR (Canadian Advanced Network for Astronomical Research) cloud infrastructure
-using the `canfar.sessions.Session` (Skaha) API.
-
-Overview & Workflow:
-1. Parses run name (`name`) and model profile identifier (`fittype`) from command line.
-2. Configures compute resources (16 CPU cores, AstroML Docker container).
-3. Defines the command payload, pointing to `launch_fittings_scratch_bshlog_pfk.sh`
-   with appropriate arguments (`in_dir`, `out_dir_full`, `name`, `data_path`, `fittype`).
-4. Creates a remote headless container session on CANFAR and prints the Session ID.
+r"""
+Launch one fit on CANFAR (headless session)
+===========================================
+The single launcher for every dataset and model.
 
 Usage:
-    python launch_headless_scratch.py <name> <fittype>
+    python launch_headless_scratch.py <session_name> <fittype> <data> [--out-dir DIR] [--dry-run]
 
-Example:
-    python launch_headless_scratch.py ngc3351-gaussring-01 twod_gaussring
+    <session_name>  Name of the CANFAR session. Also the name of the output folder.
+    <fittype>       Model name (see model_defs.py), e.g. twod_gauss3blob_nonuni
+    <data>          Visibility table: a file name inside DEFAULT_DATA_DIR, or a full path.
 
-Requirements:
-    Python >= 3.9 with `canfar` / `skaha`, `numpy`, and `pandas`.
+Examples:
+    python launch_headless_scratch.py m95-3blob twod_gauss3blob_nonuni M95_C5+C2_cont93_uvtable_freq.txt
+    python launch_headless_scratch.py m95-resid resid_gauss3blob M95_C5+C2_cont93_uvtable_freq_residiii.txt
+
+The CASA folder used for the residual images is chosen from the data file name
+(everything after 'uvtable_'):
+    M95_C5+C2_cont93_uvtable_freq.txt           ->  casa_dir_freq
+    M95_C5+C2_cont93_uvtable_freq_residiii.txt  ->  casa_dir_freq_residiii
+
+Add --dry-run to print what would be launched without starting a session.
 """
 
 import os
-import numpy as np
-import pandas as pd
+import sys
 import argparse
-from canfar.sessions import Session
 
-# Directory and data paths on the CANFAR /arc filesystem
-in_dir = '/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dyn_version/input_dir'
-out_dir = '/arc/projects/uvdisk_fit/dynest_product_dir/'
-data_path = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/M95_C5+C2_cont93_uvtable_freq.txt'
+# Pick up the shared settings (config.py) and model list (model_defs.py)
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, 'input_dir'))
+from config import NCORES, casa_dir_for_data
+from model_defs import get_spec
 
-# ------------------------------------------------------------------------------
-# Command-Line Argument Parsing
-# ------------------------------------------------------------------------------
-parser = argparse.ArgumentParser(
-    description="Launch a headless CANFAR batch container for Dynesty visibility fitting."
-)
-parser.add_argument(
-    "name",
-    type=str,
-    help="Name of the CANFAR run / session. Also specifies the output subfolder. Use hyphens (-) instead of spaces."
-)
-parser.add_argument(
-    "fittype",
-    type=str,
-    help="Model profile configuration name as registered in model_prof.py (e.g. 'twod_gaussring')."
-)
-pargs = parser.parse_args()
+# --- Locations on CANFAR (/arc) ---------------------------------------------
+REPO_DIR = '/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dyn_version'
+IN_DIR = REPO_DIR + '/input_dir'
+SESSION_CMD = REPO_DIR + '/launch_fittings_scratch_bshlog_pfk.sh'
+DEFAULT_DATA_DIR = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz'
+DEFAULT_OUT_DIR = '/arc/projects/uvdisk_fit/dynest_product_dir/'
 
-name = pargs.name
-fittype = pargs.fittype
-
-# ------------------------------------------------------------------------------
-# CANFAR Skaha Headless Session Configuration
-# ------------------------------------------------------------------------------
-cores = 16                                 # Number of CPU cores allocated for multiprocessing pool
-mem = None                                 # Default memory allocation (MB)
-out_dir_full = os.path.join(out_dir, name) # Target directory where results will be preserved
-image = 'images.canfar.net/skaha/astroml:latest' # Docker container image with astronomical tools
-
-# Entrypoint script executed inside the spawned container
-cmd = '/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dyn_version/launch_fittings_scratch_bshlog_pfk.sh'
-arglist = [in_dir, out_dir_full, name, data_path, fittype]
-args = ' '.join(arglist)
-
-# ------------------------------------------------------------------------------
-# Session Creation & Dispatch
-# ------------------------------------------------------------------------------
-session = Session()
-session_id = session.create(
-    name=name,
-    image=image,
-    cores=cores,
-    ram=mem,
-    kind="headless",
-    cmd=cmd,
-    args=args,
-    env={'sessiontype': 'headless'}
-)
-print("Session ID: {}".format(session_id))
+IMAGE = 'images.canfar.net/skaha/astroml:latest'
+RAM = None  # None = CANFAR default
 
 
-# Notes to self:
-# monitor the headless session events and logs to look for successful launches.
-# https://ws-uv.canfar.net/skaha/v0/session/[id]?view=events
-# https://ws-uv.canfar.net/skaha/v0/session/[id]?view=logs
+def main():
+    parser = argparse.ArgumentParser(description="Launch a dynesty visibility fit as a CANFAR headless session.")
+    parser.add_argument("name", help="Session name (also the output sub-folder name).")
+    parser.add_argument("fittype", help="Model name, e.g. 'twod_gauss3blob_nonuni'.")
+    parser.add_argument("data", help=f"Visibility table file name (looked up in {DEFAULT_DATA_DIR}) or full path.")
+    parser.add_argument("--out-dir", default=DEFAULT_OUT_DIR, help=f"Parent output folder (default: {DEFAULT_OUT_DIR}).")
+    parser.add_argument("--dry-run", action="store_true", help="Print the session settings and exit without launching.")
+    pargs = parser.parse_args()
+
+    # Catch typos now, before a CANFAR session is spent on them
+    try:
+        get_spec(pargs.fittype)
+        data_path = pargs.data if os.path.isabs(pargs.data) else os.path.join(DEFAULT_DATA_DIR, pargs.data)
+        casa_dir = casa_dir_for_data(data_path)
+    except ValueError as err:
+        sys.exit(f"ERROR: {err}")
+    if any(c.isspace() for c in pargs.name + pargs.fittype + data_path + pargs.out_dir):
+        sys.exit("ERROR: spaces are not allowed in the name, fittype or paths (they are passed on a command line).")
+
+    out_dir_full = os.path.join(pargs.out_dir, pargs.name)
+    arglist = [IN_DIR, out_dir_full, pargs.name, data_path, pargs.fittype]
+    args = ' '.join(arglist)
+
+    print(f"Session name : {pargs.name}")
+    print(f"Model        : {pargs.fittype}")
+    print(f"Data table   : {data_path}")
+    print(f"CASA folder  : {casa_dir}")
+    print(f"Output       : {out_dir_full}")
+    print(f"Cores        : {NCORES}")
+
+    if pargs.dry_run:
+        print("\n--dry-run: nothing launched.")
+        print(f"cmd  = {SESSION_CMD}")
+        print(f"args = {args}")
+        return
+
+    from canfar.sessions import Session  # imported here so --dry-run works anywhere
+    session = Session()
+    session_id = session.create(
+        name=pargs.name,
+        image=IMAGE,
+        cores=NCORES,
+        ram=RAM,
+        kind="headless",
+        cmd=SESSION_CMD,
+        args=args,
+        env={'sessiontype': 'headless'},
+    )
+    print(f"\nLaunched session: {session_id}")
+
+
+if __name__ == '__main__':
+    main()

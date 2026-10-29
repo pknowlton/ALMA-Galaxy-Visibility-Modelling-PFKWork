@@ -38,8 +38,9 @@ echo "Data Path:        $DATA_PATH"
 FITTYPE=$5
 echo "Fit Type:         $FITTYPE"
 
-# Path to the next stage in the pipeline (resource usage profiler)
-PSR_CMD="/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dyn_version/launch_fittings_scratch_psrec_pfk.sh"
+# Next stage in the pipeline (resource usage profiler), sitting next to this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PSR_CMD="${SCRIPT_DIR}/launch_fittings_scratch_psrec_pfk.sh"
 
 SCRATCH_ROOT="/scratch"
 
