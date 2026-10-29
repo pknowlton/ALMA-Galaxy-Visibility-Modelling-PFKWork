@@ -21,7 +21,10 @@ from astropy.coordinates import SkyCoord
 import pandas as pd
 import logging
 from model_defs import get_spec
-from config import PHASE_CENTER_RA, PHASE_CENTER_DEC
+
+# ALMA observation phase center of NGC 3351 (also used by visualize_dynesty.py)
+PHASE_CENTER_RA = '10h43m57.7330s'
+PHASE_CENTER_DEC = '+11d42m12.9996s'
 
 def sun_radec(ymc_ids):
     """
@@ -73,7 +76,7 @@ def dynest_radec(pars, fittype):
     logging.info('Fittype: %s', fittype)
     spec = get_spec(fittype)
 
-    # ALMA observation phase center (set in config.py)
+    # ALMA observation phase center
     phase_cent = SkyCoord(PHASE_CENTER_RA, PHASE_CENTER_DEC, frame='icrs')
 
     posangle, dRA, dDec = spec.geometry_params(pars)

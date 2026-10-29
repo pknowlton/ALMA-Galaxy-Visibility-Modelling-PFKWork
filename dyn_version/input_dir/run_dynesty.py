@@ -31,7 +31,7 @@ Usage:
 Example:
     python run_dynesty.py twod_gaussring --nlive 250 --maxbatch 5 --dlogz 0.1 --seed 42
 
-The number of CPU cores used by the multiprocessing Pool is NCORES in config.py.
+The number of CPU cores used by the multiprocessing Pool is NCORES (below).
 """
 
 import os
@@ -54,8 +54,10 @@ from dynesty import DynamicNestedSampler
 from galario.double import get_image_size
 from model_prof import model_prof, model_addon
 from model_defs import get_spec
-from config import NCORES
 import prior_tform
+
+# Number of CPU cores for the multiprocessing Pool (the launcher requests the same number from CANFAR)
+NCORES = 16
 
 # Module-level variable to store visibility data, avoiding inter-process serialization overhead
 GLOBAL_DATA = None

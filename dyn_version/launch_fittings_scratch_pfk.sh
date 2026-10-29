@@ -22,7 +22,6 @@
 #   file name (everything after 'uvtable_'), and must exist inside IN_DIR:
 #       M95_C5+C2_cont93_uvtable_freq.txt           ->  casa_dir_freq
 #       M95_C5+C2_cont93_uvtable_freq_residiii.txt  ->  casa_dir_freq_residiii
-#   (config.py has the same rule in Python; keep the two in step.)
 #
 # Exit code: the first failure from run_dynesty.py / visualize_dynesty.py (0 if both succeed).
 #
@@ -42,6 +41,12 @@ DATA_PATH=$3
 echo "Data Path:        $DATA_PATH"
 FITTYPE=$4
 echo "Fit Type:         $FITTYPE"
+
+# CASA folder for this data table: 'casa_dir_' + whatever follows 'uvtable_' in the file name
+#   M95_C5+C2_cont93_uvtable_freq_residiii.txt -> casa_dir_freq_residiii
+DATA_STEM=$(basename "${DATA_PATH%.*}")
+CASA_DIR="casa_dir_${DATA_STEM#*uvtable_}"
+echo "CASA folder:      $CASA_DIR"
 
 SCRATCH_ROOT="/scratch"
 
@@ -78,26 +83,6 @@ trap cleanup EXIT
 # ------------------------------------------------------------------------------
 # Create output folder within scratch staging area and copy visibility data and code.
 mkdir -p "${STAGING_DIR}/output"
-
-# Work out which CASA folder goes with this data table (rule described at the top)
-DATA_FILE=$(basename "${DATA_PATH}")
-DATA_STEM="${DATA_FILE%.*}"
-case "${DATA_STEM}" in
-    *uvtable_*) CASA_DIR="casa_dir_${DATA_STEM#*uvtable_}" ;;
-    *) echo "ERROR: cannot derive CASA folder: '${DATA_FILE}' does not contain 'uvtable_'" >&2; exit 2 ;;
-esac
-echo "CASA folder:      $CASA_DIR"
-
-# Check the inputs exist now, rather than failing deep inside a long run
-# (the exit trap above still saves the log and cleans up scratch)
-if [ ! -f "${DATA_PATH}" ]; then
-    echo "ERROR: data table not found: ${DATA_PATH}" >&2
-    exit 3
-fi
-if [ ! -d "${IN_DIR}/${CASA_DIR}" ]; then
-    echo "ERROR: CASA folder not found: ${IN_DIR}/${CASA_DIR}" >&2
-    exit 3
-fi
 
 cp "${DATA_PATH}" "${STAGING_DIR}/uvtable.txt"
 cp -r "${IN_DIR}/"* "${STAGING_DIR}/"

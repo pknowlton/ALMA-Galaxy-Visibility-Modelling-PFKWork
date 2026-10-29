@@ -50,9 +50,7 @@ from dynesty import utils as dyfunc
 from dynesty import plotting as dyplot
 from model_prof import model_prof, model_addon
 from model_defs import get_spec
-from radec_calc import dynest_radec, make_model_wcs
-from config import (PHASE_CENTER_RA, PHASE_CENTER_DEC, CASA_MS_FULL, CASA_MS_XX, CASA_MS_YY,
-                    CASA_DATA_IMAGE, CASA_RESID_IMAGE)
+from radec_calc import dynest_radec, make_model_wcs, PHASE_CENTER_RA, PHASE_CENTER_DEC
 import prior_tform as pt_stream
 from uvplot import UVTable
 from matplotlib.backends.backend_pdf import PdfPages
@@ -515,12 +513,6 @@ def main():
     )
     logging.info("==========Visualization Output==========")
     logging.info('Fittype: %s', fittype)
-
-    # Fail immediately (before any plotting) if the CASA folder for this dataset is missing
-    if not os.path.isdir(casa_dir):
-        msg = f"CASA folder '{casa_dir}' not found in {os.getcwd()}. Check --casa-dir."
-        logging.error(msg)
-        raise FileNotFoundError(msg)
     logging.info(f"CASA folder: {casa_dir}")
 
     # --------------------------------------------------------------------------
@@ -598,13 +590,13 @@ def main():
     # --------------------------------------------------------------------------
     # 3. Load Observed Visibilities for Residual Calculation
     # --------------------------------------------------------------------------
-    # File names inside the CASA folder are set in config.py; the folder itself comes from --casa-dir
-    ms = os.path.join(casa_dir, CASA_MS_FULL)
-    msx = os.path.join(casa_dir, CASA_MS_XX)
-    msy = os.path.join(casa_dir, CASA_MS_YY)
+    # The CASA folder comes from --casa-dir (chosen by the launch script from the data file name)
+    ms = './' + casa_dir + '/M95_C5+C2_cont93_uvtable.ms'
+    msx = './' + casa_dir + '/M95_C5+C2_cont93_trimmedXX.ms'
+    msy = './' + casa_dir + '/M95_C5+C2_cont93_trimmedYY.ms'
 
-    data_imgname = os.path.join(casa_dir, CASA_DATA_IMAGE)
-    resid_imgname = os.path.join(casa_dir, CASA_RESID_IMAGE)
+    data_imgname = './' + casa_dir + '/M95_cont93GHz_auto'
+    resid_imgname = './' + casa_dir + '/M95_cont93GHz_residual'
 
     # Ingest XX baseline visibilities with frequency awareness
     raw_x = np.require(np.loadtxt(msx + '.uvtable.txt', unpack=True), requirements='C')
