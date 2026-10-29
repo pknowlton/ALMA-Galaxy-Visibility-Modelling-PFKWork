@@ -28,7 +28,7 @@ name = pargs.name
 fittype = pargs.fittype
 
 in_dir = '/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dyn_version/input_dir'
-out_dir = '/arc/projects/uvdisk_fit/dynest_product_dir/'
+out_dir = '/arc/projects/uvdisk_fit/results/dyn_results/'
 data_dir = '/arc/projects/uvdisk_fit/ngc_3351/JS_data/cont93GHz/'
 data_path = os.path.join(data_dir, pargs.data_file)  # a full path given as data_file is used as is
 
