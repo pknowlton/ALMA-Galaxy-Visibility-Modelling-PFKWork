@@ -45,6 +45,7 @@ Key Architecture & User Ergonomics:
    add its prior table here, and register it in `PRIOR_RANGES`.
 """
 
+import functools
 import numpy as np
 from model_defs import get_spec
 
@@ -321,11 +322,28 @@ BLOB_USER_PRIORS = {
 # distinct and non-overlapping (North, South-West, South-East clumps) to break
 # permutation symmetry between blobs and avoid label switching.
 
+def _transform(u, low, high, span, area_dims):
+    """
+    The prior transform itself: unit hypercube u -> physical parameters.
+
+    Linear in u between low and high, except the blob distances (area_dims),
+    which are sampled uniformly in area. This is a top-level function (not nested
+    inside make_ptform) so that multiprocessing can pickle it and send it to the
+    worker processes.
+    """
+    u = np.asarray(u)
+    v = low + u * span
+    for i in area_dims:
+        v[i] = uniform_area_radius(u[i], low[i], high[i])
+    return v
+
+
 def make_ptform(fittype):
     """
     Builds the prior transform u -> theta for a fittype.
 
     The parameter layout comes from model_defs.py; the ranges from PRIOR_RANGES.
+    Returns `_transform` with this model's ranges filled in (functools.partial).
     """
     spec = get_spec(fittype)
     ranges = PRIOR_RANGES[spec.name]
@@ -337,16 +355,7 @@ def make_ptform(fittype):
     span = high - low
     area_dims = tuple(spec.area_dims)
 
-    def ptform(u):
-        u = np.asarray(u)
-        v = low + u * span
-        for i in area_dims:
-            v[i] = uniform_area_radius(u[i], low[i], high[i])
-        return v
-
-    ptform.__name__ = f"{spec.name}_ptform"
-    ptform.__doc__ = f"Prior transform for '{spec.name}' ({spec.ndim} parameters)."
-    return ptform
+    return functools.partial(_transform, low=low, high=high, span=span, area_dims=area_dims)
 
 
 twod_gaussring_ptform = make_ptform('twod_gaussring')                    # 7 parameters
