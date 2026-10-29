@@ -31,24 +31,30 @@ expressed in **radians** or **arcseconds**, depending on the execution mode:
 1. `'chi2'` / `'vis'` (Fourier / Visibility domain):
    - Galario operates internally in **radians**.
    - Input parameters in `pars` are supplied in **arcseconds** by the sampler.
-   - The top-level wrapper functions (`twod_gaussring`, `twod_gaussring_nonuni`, `twod_gauss1blob`, `twod_gauss2blob`, `twod_gauss3blob`, `twod_gauss3blob_nonuni`, `resid_gauss1blob`, `resid_gauss3blob`)
-     automatically convert all spatial dimensions from arcseconds to **radians**
+   - `evaluate_model` automatically converts all spatial dimensions from arcseconds to **radians**
      (via multiplication by `arcsec = np.pi / (180 * 3600)`).
    - Pixel scale `dxy` is provided in **radians** (from `get_image_size`).
-   - The low-level model generators and profile functions receive all spatial quantities
+   - The image builder and profile functions receive all spatial quantities
      consistently in **radians**.
 
 2. `'plot'` (Sky Image / Visualization domain):
    - Pixel scale `dxy` is passed directly in **arcseconds** (from FITS header `CDELT2 * 3600`).
-   - The top-level wrappers skip radian conversion, keeping all spatial parameters in **arcseconds**.
-   - The model generators construct coordinate grids $(xx, yy)$ in **arcseconds** to directly
+   - `evaluate_model` skips radian conversion, keeping all spatial parameters in **arcseconds**.
+   - The image builder constructs coordinate grids $(xx, yy)$ in **arcseconds** to directly
      produce physical surface brightness maps in $\text{Jy}/\text{sr}$.
+
+Model Structure:
+----------------
+What each `fittype` contains (ring or no ring, number of blobs, where the disk
+geometry comes from, parameter labels) is defined once in `model_defs.py`.
+All fittypes are evaluated by the same generic code (`evaluate_model`), so there is
+no per-model wrapper function to keep in sync.
 """
 
 import numpy as np
 import logging
-from galario.double import get_image_size, deg, arcsec, chi2Profile, chi2Image, sampleProfile, sampleImage
-import pandas as pd
+from galario.double import deg, arcsec, chi2Image, sampleImage
+from model_defs import get_spec
 
 # Module-level coordinate meshgrid cache to avoid heavy allocations across workers
 _GRID_CACHE = {}
@@ -216,1055 +222,195 @@ def blob_flux_to_peak(log_flux_jy, sigma_rad):
     return float(np.log10(max(i0_jysr, 1e-30)))
 
 #########################
-### 2D Gaussian Ring
+### Generic model builder (ring + N blobs)
 #########################
+#
+# Every fittype is "optional ring + N Gaussian blobs", as described in
+# model_defs.py. The three functions below build any of them.
+#
+#   _split_pars        : pull ring / blob / geometry values out of the sampler's `pars`
+#   _build_sky_image   : make the 2D image for 'chi2'/'vis' (radians) or 'plot' (arcsec)
+#   evaluate_model     : image -> chi2, model visibilities, or plot image
 
-def twod_gaussring_model(peak, sigma, rad, inc, pa, dra, ddec, nxy, dxy, version):
-    r"""
-    Generates a 2D image matrix representing an inclined, rotated Gaussian ring.
-
-    Parameters
-    ----------
-    peak : float
-        Log10 of peak surface brightness [log(Jy/sr)].
-    sigma : float
-        Gaussian radial sigma. In **radians** for `version in ('chi2', 'vis')`; in **arcseconds** for `version == 'plot'`.
-    rad : float
-        Central ring radius. In **radians** for `version in ('chi2', 'vis')`; in **arcseconds** for `version == 'plot'`.
-    inc : float
-        Disk inclination angle in radians (0 = face-on, $\pi/2$ = edge-on).
-    pa : float
-        Disk position angle in radians (East of North).
-    dra : float
-        Right Ascension center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    ddec : float
-        Declination center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    nxy : int
-        Number of pixels along each axis of the square image grid.
-    dxy : float
-        Angular pixel scale. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    version : str
-        Operating mode:
-            - `'chi2'` / `'vis'`: Computes deprojected image in intrinsic coordinates (radians);
-                                  spatial shifts ($\Delta\alpha, \Delta\delta$) and rotation
-                                  are handled analytically by Galario during FFT.
-            - `'plot'`: Applies spatial shifts and rotation directly on the pixel grid (arcseconds)
-                        for displaying in sky coordinates.
+def _split_pars(spec, pars):
+    """
+    Splits the flat parameter vector into ring, blob and geometry pieces,
+    in the units the sampler uses (log10 Jy, log10 arcsec, arcsec, degrees).
 
     Returns
     -------
-    numpy.ndarray
-        2D numpy array of shape (nxy, nxy) containing model sky brightness.
+    ring : dict or None
+        {'log_flux', 'log_sigma', 'rad', 'inc', 'offset'} ('offset' is None for a uniform ring)
+    blobs : list of dict
+        One {'log_flux', 'log_sigma', 'dist', 'ang'} per blob.
+    geometry : tuple
+        (posangle_deg, dRA_arcsec, dDec_arcsec)
+    """
+    if len(pars) != spec.ndim:
+        msg = f"Model '{spec.name}' expects {spec.ndim} parameters, got {len(pars)}."
+        logging.warning(msg)
+        raise ValueError(msg)
+
+    ring = None
+    if spec.has_ring:
+        ring = {
+            'log_flux': pars[0], 'log_sigma': pars[1], 'rad': pars[2], 'inc': pars[3],
+            'offset': pars[7] if spec.is_nonuni else None,
+        }
+
+    blobs = []
+    for k in range(spec.n_blobs):
+        i = spec.blob_index(k)
+        blobs.append({'log_flux': pars[i], 'log_sigma': pars[i + 1], 'dist': pars[i + 2], 'ang': pars[i + 3]})
+
+    return ring, blobs, spec.geometry_params(pars)
+
+
+def _build_sky_image(ring, blobs, pa, dra, ddec, nxy, dxy, version):
+    """
+    Builds the 2D model image: ring (if any) + blobs, added in that order.
+
+    `ring` and `blobs` hold the values listed below, already converted:
+        ring  : peak, offset (rad or None), sigma, rad, inc (rad)
+        blobs : peak, sigma, dist, ang (rad)
+
+    Lengths (sigma, rad, dist, dra, ddec, dxy) are in **radians** for version in
+    ('chi2', 'vis') and in **arcseconds** for 'plot'. Angles (inc, pa, ang, offset)
+    are always radians.
+
+    'chi2'/'vis': the image is built un-rotated and un-shifted; Galario applies
+                  PA, dRA and dDec during the FFT.
+    'plot'      : shift and rotation are applied here on the pixel grid, and the
+                  result is a surface brightness in Jy/sr (dxy = 1).
     """
     xx, yy = get_grid(nxy, dxy)
 
     if version in ("chi2", "vis"):
-        # Deproject x-axis by cos(inclination) to account for disk tilt (all units in radians)
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
-        return ring_model_jypix
-
+        # Blob centres in the un-rotated frame (East: x > 0, North: y > 0)
+        x, y = xx, yy
+        pix = dxy
     elif version == 'plot':
-        # Shift coordinates to account for centroid offsets (all units in arcseconds)
         xx_shifted = xx - dra
         yy_shifted = yy - ddec
-
-        # Rotate coordinates by position angle (PA, East of North)
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        # Deproject inclined circular ring into an ellipse
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        # Return surface brightness in Jy/sr (dxy = 1)
-        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1)
-        return ring_model_jysr
-
+        x = xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
+        y = xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
+        pix = 1
     else:
         msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
         logging.warning(msg)
         raise ValueError(msg)
 
-def twod_gaussring(pars, args, vis_data, version):
+    image = None
+
+    if ring is not None:
+        # Deproject x-axis by cos(inclination) to account for disk tilt
+        xinc = x / np.cos(ring['inc'])
+        radius_vec = np.hypot(xinc, y)
+        if ring['offset'] is None:
+            image = gaussring_prof(ring['peak'], ring['sigma'], ring['rad'], radius_vec, pix)
+        else:
+            # Azimuthal angle in the disk plane (East of North)
+            theta_vec = np.arctan2(xinc, y)
+            image = gaussring_nonuni_prof(ring['peak'], theta_vec, ring['offset'], ring['sigma'], ring['rad'], radius_vec, pix)
+
+    for b in blobs:
+        # Calculate Cartesian offsets (East: xdot > 0, North: ydot > 0)
+        xdot = b['dist'] * np.sin(b['ang'])
+        ydot = b['dist'] * np.cos(b['ang'])
+        blob_img = gaussblob_prof(b['peak'], b['sigma'], x, y, xdot, ydot, pix)
+        image = blob_img if image is None else image + blob_img
+
+    return image
+
+
+def evaluate_model(spec, pars, args, vis_data, version):
     """
-    Top-level model handler for the 2D Gaussian Ring.
+    Evaluates any model described by a ModelSpec.
 
     Converts parameter units (degrees to radians; arcseconds to radians when fitting),
     reparameterizes log flux and log sigma to physical peak surface brightness,
-    constructs the 2D image model, and evaluates chi^2, model visibilities, or image maps.
+    builds the 2D image, and returns chi^2, model visibilities, or the image.
 
     Parameters
     ----------
+    spec : model_defs.ModelSpec
     pars : array_like
-        Model parameter vector (Audit P1 Item 1: log integrated flux + log size):
-        [log_flux (log10 Jy), log_sigma (log10 arcsec), ring_rad (arcsec), inclination (deg),
-         posangle (deg), dRA (arcsec), dDec (arcsec)]
+        Parameter vector in the order given by `spec.labels_units()`.
     args : tuple
-        Image dimension parameters: `(nxy, dxy)`:
-        - `dxy` is in **radians** for `version in ('chi2', 'vis')`
-        - `dxy` is in **arcseconds** for `version == 'plot'`
+        `(nxy, dxy)`. `dxy` is in **radians** for 'chi2'/'vis', **arcseconds** for 'plot'.
     vis_data : tuple
-        Interferometric visibility data: (u, v, Re, Im, weights).
+        (u, v, Re, Im, weights).
     version : str
-        Evaluation mode: `'chi2'`, `'vis'`, or `'plot'`.
+        `'chi2'`, `'vis'` or `'plot'`.
 
     Returns
     -------
     float or numpy.ndarray
-        - If `version == 'chi2'`: Scalar goodness-of-fit chi^2 value.
-        - If `version == 'vis'`: 1D complex numpy array of sampled model visibilities.
-        - If `version == 'plot'`: 2D real numpy array of model image brightness.
+        - 'chi2': scalar chi^2.
+        - 'vis' : 1D complex array of model visibilities.
+        - 'plot': 2D array of model surface brightness (Jy/sr).
     """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec = pars
+    ring_p, blob_p, (posangle, dRA, dDec) = _split_pars(spec, pars)
     nxy, dxy = args
     u, v, re, im, w = vis_data
 
-    inclination *= deg
-    posangle *= deg
+    # Lengths are converted to radians when fitting and left in arcsec for plots
+    to_len = (lambda x: x * arcsec) if version in ("chi2", "vis") else (lambda x: x)
 
-    sigma_arcsec = 10.0**log_sigma
-    sigma_rad = sigma_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
+    posangle_rad = posangle * deg
 
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        model_img = twod_gaussring_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, nxy, dxy, version) 
+    ring = None
+    if ring_p is not None:
+        inc_rad = ring_p['inc'] * deg
+        sigma_arcsec = 10.0**ring_p['log_sigma']
+        sigma_rad = sigma_arcsec * arcsec
+        rad_rad = ring_p['rad'] * arcsec
+        ring = {
+            'peak': ring_flux_to_peak(ring_p['log_flux'], sigma_rad, rad_rad, inc_rad),
+            'offset': None if ring_p['offset'] is None else ring_p['offset'] * deg,
+            'sigma': to_len(sigma_arcsec),
+            'rad': to_len(ring_p['rad']),
+            'inc': inc_rad,
+        }
 
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gaussring_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, nxy, dxy, version)
+    blobs = []
+    for b in blob_p:
+        sigma_arcsec = 10.0**b['log_sigma']
+        sigma_rad = sigma_arcsec * arcsec
+        blobs.append({
+            'peak': blob_flux_to_peak(b['log_flux'], sigma_rad),
+            'sigma': to_len(sigma_arcsec),
+            'dist': to_len(b['dist']),
+            'ang': b['ang'] * deg,
+        })
+
+    model_img = _build_sky_image(ring, blobs, posangle_rad, to_len(dRA), to_len(dDec), nxy, dxy, version)
+
+    if version == 'plot':
         return model_img
 
-#########################
-### 2D Non-Uniform Gaussian Ring
-#########################
+    dRA_rad = dRA * arcsec
+    dDec_rad = dDec * arcsec
+    if version == 'chi2':
+        return chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle_rad, origin='lower')
+    return np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle_rad, origin='lower'), dtype=np.complex256)
 
-def twod_gaussring_nonuni_model(peak, offset, sigma, rad, inc, pa, dra, ddec, nxy, dxy, version):
-    r"""
-    Generates a 2D image matrix representing an inclined, rotated non-uniform Gaussian ring
-    with m=2 azimuthal modulation.
-
-    Parameters
-    ----------
-    peak : float
-        Log10 of the mean azimuthal peak surface brightness [log(Jy/sr)].
-    offset : float
-        Azimuthal position angle of the emission peak in radians (East of North in the disk frame).
-    sigma : float
-        Gaussian radial sigma. In **radians** for `version in ('chi2', 'vis')`; in **arcseconds** for `version == 'plot'`.
-    rad : float
-        Central ring radius. In **radians** for `version in ('chi2', 'vis')`; in **arcseconds** for `version == 'plot'`.
-    inc : float
-        Disk inclination angle in radians (0 = face-on, $\pi/2$ = edge-on).
-    pa : float
-        Disk position angle in radians (East of North).
-    dra : float
-        Right Ascension center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    ddec : float
-        Declination center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    nxy : int
-        Number of pixels along each axis of the square image grid.
-    dxy : float
-        Angular pixel scale. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    version : str
-        Operating mode:
-            - `'chi2'` / `'vis'`: Computes deprojected image in intrinsic coordinates (radians);
-                                  spatial shifts ($\Delta\alpha, \Delta\delta$) and rotation
-                                  are handled analytically by Galario during FFT.
-            - `'plot'`: Applies spatial shifts and rotation directly on the pixel grid (arcseconds)
-                        for displaying in sky coordinates.
-
-    Returns
-    -------
-    numpy.ndarray
-        2D numpy array of shape (nxy, nxy) containing model sky brightness.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    if version in ("chi2", "vis"):
-        # Deproject x-axis by cos(inclination) to account for disk tilt (all units in radians)
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        # Azimuthal angle in the disk plane (East of North)
-        theta_vec = np.arctan2(xinc, yy)
-
-        ring_model_jypix = gaussring_nonuni_prof(peak, theta_vec, offset, sigma, rad, radius_vec, dxy)
-        return ring_model_jypix
-
-    elif version == 'plot':
-        # Shift coordinates to account for centroid offsets (all units in arcseconds)
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        # Rotate coordinates by position angle (PA, East of North)
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        # Deproject inclined circular ring into an ellipse
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        # Azimuthal angle in the disk plane (East of North)
-        theta_vec = np.arctan2(xinc, ypa)
-
-        # Return surface brightness in Jy/sr (dxy = 1)
-        ring_model_jysr = gaussring_nonuni_prof(peak, theta_vec, offset, sigma, rad, radius_vec, 1)
-        return ring_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_gaussring_nonuni(pars, args, vis_data, version):
-    """
-    Top-level model handler for the 2D Non-Uniform Gaussian Ring (8 parameters).
-
-    Parameters
-    ----------
-    pars : array_like
-        Model parameter vector:
-        [log_flux (log10 Jy), log_sigma (log10 arcsec), ring_rad (arcsec), inclination (deg),
-         posangle (deg), dRA (arcsec), dDec (arcsec), offset (deg)]
-    args : tuple
-        Image dimension parameters: `(nxy, dxy)`:
-        - `dxy` is in **radians** for `version in ('chi2', 'vis')`
-        - `dxy` is in **arcseconds** for `version == 'plot'`
-    vis_data : tuple
-        Interferometric visibility data: (u, v, Re, Im, weights).
-    version : str
-        Evaluation mode: `'chi2'`, `'vis'`, or `'plot'`.
-
-    Returns
-    -------
-    float or numpy.ndarray
-        - If `version == 'chi2'`: Scalar goodness-of-fit chi^2 value.
-        - If `version == 'vis'`: 1D complex numpy array of sampled model visibilities.
-        - If `version == 'plot'`: 2D real numpy array of model image brightness.
-    """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, offset = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    offset_rad = offset * deg
-    inclination *= deg
-    posangle *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_rad = sigma_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        model_img = twod_gaussring_nonuni_model(peak_ring, offset_rad, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gaussring_nonuni_model(peak_ring, offset_rad, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, nxy, dxy, version)
-        return model_img
-
-#########################
-### 2D Gaussian Ring + 1 Gaussian Blob
-#########################
-
-def twod_gauss1blob_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, nxy, dxy, version):
-    """
-    Generates a 2D image matrix of an inclined Gaussian ring plus 1 compact Gaussian cluster.
-
-    Parameters
-    ----------
-    peak : float
-        Ring peak brightness [log10(Jy/sr)].
-    sigma, rad : float
-        Ring radial sigma and central radius. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    inc, pa : float
-        Disk inclination and position angle [rad].
-    dra, ddec : float
-        Centroid offsets in RA and Dec. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    peak_b1 : float
-        Blob 1 peak brightness [log10(Jy/sr)].
-    sigma_b1, dist_b1 : float
-        Blob 1 Gaussian sigma and radial distance from ring center. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    ang_b1 : float
-        Blob 1 azimuthal angle [rad] (East of North in disk frame).
-    nxy : int
-        Grid pixel count along each dimension.
-    dxy : float
-        Angular pixel scale. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    version : str
-        Evaluation mode (`'chi2'`, `'vis'`, or `'plot'`).
-
-    Returns
-    -------
-    numpy.ndarray
-        2D array representing combined ring and blob intensity.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    # Calculate Cartesian offsets for Blob 1 (East: xdot > 0, North: ydot > 0)
-    xdot_b1 = dist_b1 * np.sin(ang_b1)
-    ydot_b1 = dist_b1 * np.cos(ang_b1)
-
-    if version in ("chi2", "vis"):
-        # Deproject x-axis by cos(inclination) (all spatial units in radians)
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
-        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
-
-        return ring_model_jypix + blob1_model_jypix
-
-    elif version == 'plot':
-        # Shift and rotate coordinates (all spatial units in arcseconds)
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1)
-        blob_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
-
-        return ring_model_jysr + blob_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_gauss1blob(pars, args, vis_data, version):
-    """
-    Top-level model handler for 2D Gaussian Ring + 1 Gaussian Blob (11 parameters).
-
-    Parameters
-    ----------
-    pars : array_like (Audit P1 Item 1: log integrated flux + log size)
-        [log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec,
-         log_flux_b1, log_sigma_b1, dist_b1, ang_b1]
-    args : tuple
-        `(nxy, dxy)`
-    vis_data : tuple
-        (u, v, Re, Im, weights)
-    version : str
-        `'chi2'`, `'vis'`, or `'plot'`
-    """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    inclination *= deg
-    posangle *= deg
-    ang_b1 *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_b1_arcsec = 10.0**log_sigma_b1
-
-    sigma_rad = sigma_arcsec * arcsec
-    sigma_b1_rad = sigma_b1_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
-    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b1_rad = dist_b1 * arcsec
-        model_img = twod_gauss1blob_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gauss1blob_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, nxy, dxy, version)
-        return model_img
-
-#########################
-### 2D Gaussian Ring + 2 Gaussian Blobs
-#########################
-
-def twod_gauss2blob_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, nxy, dxy, version):
-    """
-    Generates a 2D image matrix of an inclined Gaussian ring plus 2 distinct Gaussian clusters.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    xdot_b1 = dist_b1 * np.sin(ang_b1)
-    ydot_b1 = dist_b1 * np.cos(ang_b1)
-
-    xdot_b2 = dist_b2 * np.sin(ang_b2)
-    ydot_b2 = dist_b2 * np.cos(ang_b2)
-
-    if version in ("chi2", "vis"):
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
-        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
-        blob2_model_jypix = gaussblob_prof(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
-
-        return ring_model_jypix + blob1_model_jypix + blob2_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1)
-        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
-        blob2_model_jysr = gaussblob_prof(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2, 1)
-
-        return ring_model_jysr + blob1_model_jysr + blob2_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_gauss2blob(pars, args, vis_data, version):
-    """
-    Top-level model handler for 2D Gaussian Ring + 2 Gaussian Blobs (15 parameters).
-    """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    inclination *= deg
-    posangle *= deg
-    ang_b1 *= deg
-    ang_b2 *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_b1_arcsec = 10.0**log_sigma_b1
-    sigma_b2_arcsec = 10.0**log_sigma_b2
-
-    sigma_rad = sigma_arcsec * arcsec
-    sigma_b1_rad = sigma_b1_arcsec * arcsec
-    sigma_b2_rad = sigma_b2_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
-    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
-    peak_b2 = blob_flux_to_peak(log_flux_b2, sigma_b2_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b1_rad = dist_b1 * arcsec
-        dist_b2_rad = dist_b2 * arcsec
-        model_img = twod_gauss2blob_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1, peak_b2, sigma_b2_rad, dist_b2_rad, ang_b2, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gauss2blob_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, peak_b2, sigma_b2_arcsec, dist_b2, ang_b2, nxy, dxy, version)
-        return model_img
-
-#########################
-### 2D Gaussian Ring + 3 Gaussian Blobs
-#########################
-
-def twod_gauss3blob_model(peak, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy, version):
-    """
-    Generates a 2D image matrix of an inclined Gaussian ring plus 3 distinct Gaussian clusters.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    xdot_b1 = dist_b1 * np.sin(ang_b1)
-    ydot_b1 = dist_b1 * np.cos(ang_b1)
-
-    xdot_b2 = dist_b2 * np.sin(ang_b2)
-    ydot_b2 = dist_b2 * np.cos(ang_b2)
-
-    xdot_b3 = dist_b3 * np.sin(ang_b3)
-    ydot_b3 = dist_b3 * np.cos(ang_b3)
-
-    if version in ("chi2", "vis"):
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        ring_model_jypix = gaussring_prof(peak, sigma, rad, radius_vec, dxy)
-        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
-        blob2_model_jypix = gaussblob_prof(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
-        blob3_model_jypix = gaussblob_prof(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
-
-        return ring_model_jypix + blob1_model_jypix + blob2_model_jypix + blob3_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        ring_model_jysr = gaussring_prof(peak, sigma, rad, radius_vec, 1)
-        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
-        blob2_model_jysr = gaussblob_prof(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2, 1)
-        blob3_model_jysr = gaussblob_prof(peak_b3, sigma_b3, xpa, ypa, xdot_b3, ydot_b3, 1)
-
-        return ring_model_jysr + blob1_model_jysr + blob2_model_jysr + blob3_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_gauss3blob(pars, args, vis_data, version):
-    """
-    Top-level model handler for 2D Gaussian Ring + 3 Gaussian Blobs (19 parameters).
-    """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    inclination *= deg
-    posangle *= deg
-    ang_b1 *= deg
-    ang_b2 *= deg
-    ang_b3 *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_b1_arcsec = 10.0**log_sigma_b1
-    sigma_b2_arcsec = 10.0**log_sigma_b2
-    sigma_b3_arcsec = 10.0**log_sigma_b3
-
-    sigma_rad = sigma_arcsec * arcsec
-    sigma_b1_rad = sigma_b1_arcsec * arcsec
-    sigma_b2_rad = sigma_b2_arcsec * arcsec
-    sigma_b3_rad = sigma_b3_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
-    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
-    peak_b2 = blob_flux_to_peak(log_flux_b2, sigma_b2_rad)
-    peak_b3 = blob_flux_to_peak(log_flux_b3, sigma_b3_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b1_rad = dist_b1 * arcsec
-        dist_b2_rad = dist_b2 * arcsec
-        dist_b3_rad = dist_b3 * arcsec
-        model_img = twod_gauss3blob_model(peak_ring, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1, peak_b2, sigma_b2_rad, dist_b2_rad, ang_b2, peak_b3, sigma_b3_rad, dist_b3_rad, ang_b3, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gauss3blob_model(peak_ring, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, peak_b2, sigma_b2_arcsec, dist_b2, ang_b2, peak_b3, sigma_b3_arcsec, dist_b3, ang_b3, nxy, dxy, version)
-        return model_img
-
-#########################
-### 2D Non-Uniform Gaussian Ring + 3 Gaussian Blobs
-#########################
-
-def twod_gauss3blob_nonuni_model(peak, offset, sigma, rad, inc, pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy, version):
-    r"""
-    Generates a 2D image matrix of an inclined non-uniform Gaussian ring (m=2) plus 3 distinct Gaussian clusters.
-
-    Parameters
-    ----------
-    peak : float
-        Log10 of mean azimuthal peak surface brightness for ring [log(Jy/sr)].
-    offset : float
-        Azimuthal position angle of the emission peak in radians (East of North in the disk frame).
-    sigma : float
-        Gaussian radial sigma of the ring. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    rad : float
-        Central ring radius. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    inc : float
-        Disk inclination angle in radians.
-    pa : float
-        Disk position angle in radians (East of North).
-    dra : float
-        Right Ascension center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    ddec : float
-        Declination center offset. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    peak_b1, peak_b2, peak_b3 : float
-        Log10 of peak surface brightness for Blobs 1, 2, and 3 [log(Jy/sr)].
-    sigma_b1, sigma_b2, sigma_b3 : float
-        Gaussian sigma for Blobs 1, 2, and 3. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    dist_b1, dist_b2, dist_b3 : float
-        Radial distances of Blobs 1, 2, and 3 from ring center. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    ang_b1, ang_b2, ang_b3 : float
-        Azimuthal angles of Blobs 1, 2, and 3 in radians (East of North in disk frame).
-    nxy : int
-        Pixel count per side.
-    dxy : float
-        Angular pixel scale. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    version : str
-        `'chi2'`, `'vis'`, or `'plot'`.
-
-    Returns
-    -------
-    numpy.ndarray
-        2D array of model sky brightness.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    xdot_b1 = dist_b1 * np.sin(ang_b1)
-    ydot_b1 = dist_b1 * np.cos(ang_b1)
-
-    xdot_b2 = dist_b2 * np.sin(ang_b2)
-    ydot_b2 = dist_b2 * np.cos(ang_b2)
-
-    xdot_b3 = dist_b3 * np.sin(ang_b3)
-    ydot_b3 = dist_b3 * np.cos(ang_b3)
-
-    if version in ("chi2", "vis"):
-        xinc = xx / np.cos(inc)
-        radius_vec = np.hypot(xinc, yy)
-
-        # Azimuthal angle in the disk plane (East of North)
-        theta_vec = np.arctan2(xinc, yy)
-
-        ring_model_jypix = gaussring_nonuni_prof(peak, theta_vec, offset, sigma, rad, radius_vec, dxy)
-        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
-        blob2_model_jypix = gaussblob_prof(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
-        blob3_model_jypix = gaussblob_prof(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
-
-        return ring_model_jypix + blob1_model_jypix + blob2_model_jypix + blob3_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        xinc = xpa / np.cos(inc)
-        radius_vec = np.hypot(xinc, ypa)
-
-        # Azimuthal angle in the disk plane (East of North)
-        theta_vec = np.arctan2(xinc, ypa)
-
-        ring_model_jysr = gaussring_nonuni_prof(peak, theta_vec, offset, sigma, rad, radius_vec, 1)
-        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
-        blob2_model_jysr = gaussblob_prof(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2, 1)
-        blob3_model_jysr = gaussblob_prof(peak_b3, sigma_b3, xpa, ypa, xdot_b3, ydot_b3, 1)
-
-        return ring_model_jysr + blob1_model_jysr + blob2_model_jysr + blob3_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_gauss3blob_nonuni(pars, args, vis_data, version):
-    r"""
-    Top-level model handler for 2D Non-Uniform Gaussian Ring + 3 Gaussian Blobs (20 parameters).
-
-    Parameters
-    ----------
-    pars : array_like
-        Model parameter vector:
-        [log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, offset,
-         log_flux_b1, log_sigma_b1, dist_b1, ang_b1,
-         log_flux_b2, log_sigma_b2, dist_b2, ang_b2,
-         log_flux_b3, log_sigma_b3, dist_b3, ang_b3]
-    args : tuple
-        Image dimension parameters: `(nxy, dxy)`
-    vis_data : tuple
-        Interferometric visibility data: (u, v, Re, Im, weights)
-    version : str
-        Evaluation mode: `'chi2'`, `'vis'`, or `'plot'`
-
-    Returns
-    -------
-    float or numpy.ndarray
-        chi2 scalar, 1D complex visibility array, or 2D image brightness matrix.
-    """
-    log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, offset, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    offset_rad = offset * deg
-    inclination *= deg
-    posangle *= deg
-    ang_b1 *= deg
-    ang_b2 *= deg
-    ang_b3 *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_b1_arcsec = 10.0**log_sigma_b1
-    sigma_b2_arcsec = 10.0**log_sigma_b2
-    sigma_b3_arcsec = 10.0**log_sigma_b3
-
-    sigma_rad = sigma_arcsec * arcsec
-    sigma_b1_rad = sigma_b1_arcsec * arcsec
-    sigma_b2_rad = sigma_b2_arcsec * arcsec
-    sigma_b3_rad = sigma_b3_arcsec * arcsec
-    ring_rad_rad = ring_rad * arcsec
-
-    peak_ring = ring_flux_to_peak(log_flux, sigma_rad, ring_rad_rad, inclination)
-    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
-    peak_b2 = blob_flux_to_peak(log_flux_b2, sigma_b2_rad)
-    peak_b3 = blob_flux_to_peak(log_flux_b3, sigma_b3_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b1_rad = dist_b1 * arcsec
-        dist_b2_rad = dist_b2 * arcsec
-        dist_b3_rad = dist_b3 * arcsec
-        model_img = twod_gauss3blob_nonuni_model(
-            peak_ring, offset_rad, sigma_rad, ring_rad_rad, inclination, posangle, dRA_rad, dDec_rad,
-            peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1,
-            peak_b2, sigma_b2_rad, dist_b2_rad, ang_b2,
-            peak_b3, sigma_b3_rad, dist_b3_rad, ang_b3,
-            nxy, dxy, version
-        )
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_gauss3blob_nonuni_model(
-            peak_ring, offset_rad, sigma_arcsec, ring_rad, inclination, posangle, dRA, dDec,
-            peak_b1, sigma_b1_arcsec, dist_b1, ang_b1,
-            peak_b2, sigma_b2_arcsec, dist_b2, ang_b2,
-            peak_b3, sigma_b3_arcsec, dist_b3, ang_b3,
-            nxy, dxy, version
-        )
-        return model_img
-
-#########################
-### Residuals (from best fit 3 blob model above) + 1 Gaussian Blob
-#########################
-
-def resid_gauss1blob_model(pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, nxy, dxy, version):
-    """
-    Generates a 2D image matrix of a single Gaussian cluster on a residual map.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    xdot_b1 = dist_b1 * np.sin(ang_b1)
-    ydot_b1 = dist_b1 * np.cos(ang_b1)
-
-    if version in ("chi2", "vis"):
-        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
-        return blob1_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
-        return blob1_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def resid_gauss1blob(pars, args, vis_data, version):
-    """
-    Top-level model handler for 1 Gaussian Blob on a residual map (4 parameters).
-    """
-    log_flux_b1, log_sigma_b1, dist_b1, ang_b1 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    posangle = 18.8479 * deg #from best fit 3blob model
-    dRA = 0.5973 #from best fit 3blob model
-    dDec = 0.5284 #from best fit 3blob model
-
-    ang_b1 *= deg
-
-    sigma_b1_arcsec = 10.0**log_sigma_b1
-    sigma_b1_rad = sigma_b1_arcsec * arcsec
-
-    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b1_rad = dist_b1 * arcsec
-        model_img = resid_gauss1blob_model(posangle, dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = resid_gauss1blob_model(posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, nxy, dxy, version)
-        return model_img
-
-#########################
-### Rediduals (from best fit 3 blob model above) + 3 Gaussian Blobs
-#########################
-
-def resid_gauss3blob_model(pa, dra, ddec, peak_b1, sigma_b1, dist_b1, ang_b1, peak_b2, sigma_b2, dist_b2, ang_b2, peak_b3, sigma_b3, dist_b3, ang_b3, nxy, dxy, version):
-    """
-    Generates a 2D image matrix of and distinct Gaussian clusters.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    xdot_b1 = dist_b1 * np.sin(ang_b1)
-    ydot_b1 = dist_b1 * np.cos(ang_b1)
-
-    xdot_b2 = dist_b2 * np.sin(ang_b2)
-    ydot_b2 = dist_b2 * np.cos(ang_b2)
-
-    xdot_b3 = dist_b3 * np.sin(ang_b3)
-    ydot_b3 = dist_b3 * np.cos(ang_b3)
-
-    if version in ("chi2", "vis"):
-        blob1_model_jypix = gaussblob_prof(peak_b1, sigma_b1, xx, yy, xdot_b1, ydot_b1, dxy)
-        blob2_model_jypix = gaussblob_prof(peak_b2, sigma_b2, xx, yy, xdot_b2, ydot_b2, dxy)
-        blob3_model_jypix = gaussblob_prof(peak_b3, sigma_b3, xx, yy, xdot_b3, ydot_b3, dxy)
-
-        return blob1_model_jypix + blob2_model_jypix + blob3_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        blob1_model_jysr = gaussblob_prof(peak_b1, sigma_b1, xpa, ypa, xdot_b1, ydot_b1, 1)
-        blob2_model_jysr = gaussblob_prof(peak_b2, sigma_b2, xpa, ypa, xdot_b2, ydot_b2, 1)
-        blob3_model_jysr = gaussblob_prof(peak_b3, sigma_b3, xpa, ypa, xdot_b3, ydot_b3, 1)
-
-        return blob1_model_jysr + blob2_model_jysr + blob3_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def resid_gauss3blob(pars, args, vis_data, version):
-    """
-    Top-level model handler for 3 Gaussian Blobs (12 parameters).
-    """
-    log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    posangle = 18.8479 * deg #from best fit 3blob model
-    dRA = 0.5973 #from best fit 3blob model
-    dDec = 0.5284 #from best fit 3blob model
-
-    ang_b1 *= deg
-    ang_b2 *= deg
-    ang_b3 *= deg
-
-    sigma_b1_arcsec = 10.0**log_sigma_b1
-    sigma_b2_arcsec = 10.0**log_sigma_b2
-    sigma_b3_arcsec = 10.0**log_sigma_b3
-
-    sigma_b1_rad = sigma_b1_arcsec * arcsec
-    sigma_b2_rad = sigma_b2_arcsec * arcsec
-    sigma_b3_rad = sigma_b3_arcsec * arcsec
-
-    peak_b1 = blob_flux_to_peak(log_flux_b1, sigma_b1_rad)
-    peak_b2 = blob_flux_to_peak(log_flux_b2, sigma_b2_rad)
-    peak_b3 = blob_flux_to_peak(log_flux_b3, sigma_b3_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_b1_rad = dist_b1 * arcsec
-        dist_b2_rad = dist_b2 * arcsec
-        dist_b3_rad = dist_b3 * arcsec
-        model_img = resid_gauss3blob_model(posangle, dRA_rad, dDec_rad, peak_b1, sigma_b1_rad, dist_b1_rad, ang_b1, peak_b2, sigma_b2_rad, dist_b2_rad, ang_b2, peak_b3, sigma_b3_rad, dist_b3_rad, ang_b3, nxy, dxy, version) 
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = resid_gauss3blob_model(posangle, dRA, dDec, peak_b1, sigma_b1_arcsec, dist_b1, ang_b1, peak_b2, sigma_b2_arcsec, dist_b2, ang_b2, peak_b3, sigma_b3_arcsec, dist_b3, ang_b3, nxy, dxy, version)
-        return model_img
-
-#########################
-### Simulated Single Gaussian Blob (7 parameters)
-#########################
-
-def twod_simgauss_model(peak, sigma, dra, ddec, pa, dist, ang, nxy, dxy, version):
-    """
-    Generates a 2D image matrix of a single compact Gaussian blob.
-
-    Parameters
-    ----------
-    peak : float
-        Blob peak brightness [log10(Jy/sr)].
-    sigma : float
-        Blob Gaussian sigma. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    dra, ddec : float
-        Centroid offsets in RA and Dec. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    pa : float
-        Position angle [rad].
-    dist : float
-        Blob radial distance from center. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    ang : float
-        Blob azimuthal angle [rad] (East of North in disk frame).
-    nxy : int
-        Grid pixel count along each dimension.
-    dxy : float
-        Angular pixel scale. In **radians** for `'chi2'`/`'vis'`; in **arcseconds** for `'plot'`.
-    version : str
-        Evaluation mode (`'chi2'`, `'vis'`, or `'plot'`).
-
-    Returns
-    -------
-    numpy.ndarray
-        2D array of intensity values for the blob.
-    """
-    xx, yy = get_grid(nxy, dxy)
-
-    # Calculate Cartesian offsets for Blob (East: xdot > 0, North: ydot > 0)
-    xdot = dist * np.sin(ang)
-    ydot = dist * np.cos(ang)
-
-    if version in ("chi2", "vis"):
-        blob_model_jypix = gaussblob_prof(peak, sigma, xx, yy, xdot, ydot, dxy)
-        return blob_model_jypix
-
-    elif version == 'plot':
-        xx_shifted = xx - dra
-        yy_shifted = yy - ddec
-
-        xpa =  xx_shifted * np.cos(pa) - yy_shifted * np.sin(pa)
-        ypa =  xx_shifted * np.sin(pa) + yy_shifted * np.cos(pa)
-
-        blob_model_jysr = gaussblob_prof(peak, sigma, xpa, ypa, xdot, ydot, 1)
-        return blob_model_jysr
-
-    else:
-        msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
-        logging.warning(msg)
-        raise ValueError(msg)
-
-def twod_simgauss(pars, args, vis_data, version):
-    """
-    Top-level model handler for Single Gaussian Blob (7 parameters).
-
-    Parameters
-    ----------
-    pars : array_like (Audit P1 Item 1: log integrated flux + log size)
-        [log_flux, log_sigma, dist, ang, posangle, dRA, dDec]
-    args : tuple
-        `(nxy, dxy)`
-    vis_data : tuple
-        (u, v, Re, Im, weights)
-    version : str
-        `'chi2'`, `'vis'`, or `'plot'`
-    """
-    log_flux, log_sigma, dist, ang, posangle, dRA, dDec = pars
-    nxy, dxy = args
-    u, v, re, im, w = vis_data
-
-    posangle *= deg
-    ang *= deg
-
-    sigma_arcsec = 10.0**log_sigma
-    sigma_rad = sigma_arcsec * arcsec
-
-    peak = blob_flux_to_peak(log_flux, sigma_rad)
-
-    if version in ("chi2", "vis"):
-        dRA_rad = dRA * arcsec
-        dDec_rad = dDec * arcsec
-        dist_rad = dist * arcsec
-        model_img = twod_simgauss_model(peak, sigma_rad, dRA_rad, dDec_rad, posangle, dist_rad, ang, nxy, dxy, version)
-
-        if version == 'chi2':
-            chi2 = chi2Image(model_img, dxy, u, v, re, im, w, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower')
-            return chi2
-        else:
-            model_vis = np.array(sampleImage(model_img, dxy, u, v, dRA=dRA_rad, dDec=dDec_rad, PA=posangle, origin='lower'), dtype=np.complex256)
-            return model_vis
-    else:
-        model_img = twod_simgauss_model(peak, sigma_arcsec, dRA, dDec, posangle, dist, ang, nxy, dxy, version)
-        return model_img
 
 ##################################################################################################################################################
 
 def model_prof(pars, args, vis_data, version, fittype):
     """
     Central dispatcher function for model profile evaluation.
+
+    The structure of each `fittype` (ring, number of blobs, geometry) is defined
+    in `model_defs.py`.
     """
     if version not in ("chi2", "vis", "plot"):
         msg = f"Invalid version '{version}', must be 'chi2', 'vis', or 'plot'"
         logging.warning(msg)
         raise ValueError(msg)
 
-    if fittype == 'twod_gaussring':
-        prof = twod_gaussring(pars, args, vis_data, version)
-    elif fittype == 'twod_gaussring_nonuni':
-        prof = twod_gaussring_nonuni(pars, args, vis_data, version)
-    elif fittype == 'twod_gauss1blob':
-        prof = twod_gauss1blob(pars, args, vis_data, version)
-    elif fittype == 'twod_gauss2blob':
-        prof = twod_gauss2blob(pars, args, vis_data, version)
-    elif fittype == 'twod_gauss3blob':
-        prof = twod_gauss3blob(pars, args, vis_data, version)
-    elif fittype in ('twod_gauss3blob_nonuni', 'twod_gaussring_nonuni_3blob'):
-        prof = twod_gauss3blob_nonuni(pars, args, vis_data, version)
-    elif fittype == 'resid_gauss1blob':
-        prof = resid_gauss1blob(pars, args, vis_data, version)
-    elif fittype == 'resid_gauss3blob':
-        prof = resid_gauss3blob(pars, args, vis_data, version)
-    elif fittype in ('simgauss', 'twod_simgauss'):
-        prof = twod_simgauss(pars, args, vis_data, version)
-    else:
-        msg = f"Invalid fittype '{fittype}', please choose a valid fitting model, or add a new one into the code."
-        logging.warning(msg)
-        raise ValueError(msg)
-
-    return prof
+    return evaluate_model(get_spec(fittype), pars, args, vis_data, version)
 
 ##################################################################################################################################################
 
@@ -1273,54 +419,6 @@ def model_addon(fittype):
     Returns parameter metadata (labels, physical units, dimensionality) for a given model.
     Reparameterized according to Audit P1 Item 1: log integrated flux + log size.
     """
-    if fittype == 'twod_gaussring':
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec"]
-        ndim = len(label)
-
-    elif fittype == 'twod_gaussring_nonuni':
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "Prof. Offset"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype == 'twod_gauss1blob':
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype == 'twod_gauss2blob':
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype == 'twod_gauss3blob':
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle", "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype in ('twod_gauss3blob_nonuni', 'twod_gaussring_nonuni_3blob'):
-        label = ["Ring LogFlux", "Ring LogSigma", "Ring Rad", "Inc", "PA", "Offset RA", "Offset Dec", "Prof. Offset", "B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle", "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype == 'resid_gauss1blob':
-        label = ["B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype == 'resid_gauss3blob':
-        label = ["B1 LogFlux", "B1 LogSigma", "B1 Dist", "B1 Angle", "B2 LogFlux", "B2 LogSigma", "B2 Dist", "B2 Angle", "B3 LogFlux", "B3 LogSigma", "B3 Dist", "B3 Angle"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees", "log(Jy)", "log(arcsec)", "arcsec", "degrees"]
-        ndim = len(label)
-
-    elif fittype in ('simgauss', 'twod_simgauss'):
-        label = ["Blob LogFlux", "Blob LogSigma", "Dist", "Angle", "PA", "Offset RA", "Offset Dec"]
-        unit = ["log(Jy)", "log(arcsec)", "arcsec", "degrees", "degrees", "arcsec", "arcsec"]
-        ndim = len(label)
-
-    else:
-        msg = f"Invalid fittype '{fittype}', please choose a valid fitting model, or add a new one into the code."
-        logging.warning(msg)
-        raise ValueError(msg)
-
-    return label, unit, ndim
+    spec = get_spec(fittype)
+    label, unit = spec.labels_units()
+    return label, unit, len(label)

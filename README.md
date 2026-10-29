@@ -88,8 +88,9 @@ dyn_version/
 ├── launch_fittings_scratch_pfk.sh          # Core shell runner: scratch staging, Conda activation & cleanup
 └── input_dir/                              # Code and model definitions executed on compute node
     ├── run_dynesty.py                  # Main Dynesty sampling driver with multiprocessing Pool
-    ├── model_prof.py                       # 2D parametric brightness models & Galario interface
-    ├── prior_tform.py                      # Unit hypercube prior transformations for Dynesty
+    ├── model_defs.py                       # Model registry: defines every fittype (ring, blobs, geometry, labels) in one place
+    ├── model_prof.py                       # Generic 2D brightness model builder & Galario interface
+    ├── prior_tform.py                      # Prior ranges and unit hypercube transformations for Dynesty
     ├── radec_calc.py                       # Celestial coordinate conversions (Sun et al. clusters & model blobs)
     └── visualize_dynesty.py                # Post-fit imaging, CASA tclean, and PDF figure generation
 ```
@@ -131,7 +132,7 @@ This launches a headless container with 16 CPU cores, executes the full pipeline
 
 ### Supported Model Profiles (`fittype`)
 
-The pipeline implements multiple parametric models in `dyn_version/input_dir/model_prof.py`:
+The pipeline implements multiple parametric models, each defined in `dyn_version/input_dir/model_defs.py` (the table below is partly out of date: the `2peak` models were removed, and `twod_gaussring_nonuni`, `twod_gauss2blob`, `twod_gauss3blob_nonuni`, `resid_gauss1blob`, `resid_gauss3blob` and `simgauss` were added):
 
 | `fittype` | Parameters ($N_{\text{dim}}$) | Description |
 | :--- | :---: | :--- |

@@ -51,6 +51,7 @@ from dynesty import DynamicNestedSampler
 
 from galario.double import get_image_size
 from model_prof import model_prof, model_addon
+from model_defs import get_spec
 import prior_tform
 
 # Module-level variable to store visibility data, avoiding inter-process serialization overhead
@@ -199,14 +200,10 @@ def main():
     for i in range(ndim):
         logging.info(f"{labels[i]:<30} [{low_v[i]:.2f}, {high_v[i]:.2f}] {units[i]}")
 
-    # Identify periodic dimensions (e.g. Ring PA is index 4; Non-uniform ring offset is index 7; Angle 2 in double pendulum is index 14; simgauss PA is restricted to [0, 15] deg so not periodic; resid models do not sample PA)
-    periodic_dims = []
-    if fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss1blob', 'resid_gauss3blob'):
-        periodic_dims.append(4)
-    if fittype in ('twod_gaussring_nonuni', 'twod_gauss3blob_nonuni', 'twod_gaussring_nonuni_3blob'):
-        periodic_dims.append(7)
-    if fittype == 'twod_gauss1blob_2peak_dp':
-        periodic_dims.append(14)
+    # Periodic dimensions come from the model registry (model_defs.py): ring PA (index 4) and the
+    # non-uniform ring offset (index 7). simgauss PA is restricted to [0, 15] deg so is not periodic;
+    # resid models do not sample PA.
+    periodic_dims = get_spec(fittype).periodic_dims
     periodic = periodic_dims if len(periodic_dims) > 0 else None
     logging.info("Periodic parameter indices: %s", periodic_dims)
 

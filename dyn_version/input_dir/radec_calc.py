@@ -20,6 +20,7 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 import pandas as pd
 import logging
+from model_defs import get_spec
 
 def sun_radec(ymc_ids):
     """
@@ -50,13 +51,18 @@ def dynest_radec(pars, fittype):
     """
     Computes celestial (RA, Dec) coordinates for modeled clumps / components.
 
+    For ring-only models the single returned position is the fitted ring centroid.
+    For models with blobs, one position is returned per blob, in blob order.
+    The disk geometry (position angle, centroid offsets) comes from the ring
+    parameters, from the fixed best-fit constants (residual models), or from the
+    free geometry parameters (simgauss); see `model_defs.py`.
+
     Parameters
     ----------
     pars : array_like
         Best-fit model parameters.
     fittype : str
-        Model identifier: 'twod_gaussring', 'twod_gaussring_nonuni', 'twod_gauss1blob', 'twod_gauss2blob',
-        'twod_gauss3blob', 'twod_gauss3blob_nonuni', 'resid_gauss1blob', or 'resid_gauss3blob'.
+        Model identifier registered in `model_defs.py` (e.g. 'twod_gauss3blob').
 
     Returns
     -------
@@ -64,110 +70,30 @@ def dynest_radec(pars, fittype):
         Array of (RA, Dec) coordinates in degrees for each modeled clump / component.
     """
     logging.info('Fittype: %s', fittype)
+    spec = get_spec(fittype)
 
     # ALMA observation phase center
     phase_cent = SkyCoord('10h43m57.7330s', '+11d42m12.9996s', frame='icrs')
-    
-    if fittype in ('twod_gaussring', 'twod_gaussring_nonuni'):
-        # Fitted ring centroid offset
-        dRA = pars[5]
-        dDec = pars[6]
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+
+    posangle, dRA, dDec = spec.geometry_params(pars)
+    ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+
+    if spec.n_blobs == 0:
+        # Ring-only model: report the fitted ring centroid
         dynest_coords = np.zeros((1, 2))
         dynest_coords[0, 0] = ngc3351.ra.deg
         dynest_coords[0, 1] = ngc3351.dec.deg
-
-    elif fittype == 'twod_gauss1blob':
-        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1 = pars
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((1, 2))
-
-        # Position angle on the sky: (posangle + ang_b1) East of North
-        sky_ang_b1 = (posangle + ang_b1) * u.deg
-        sep_b1 = dist_b1 * u.arcsecond
-
-        radec_b1 = ngc3351.directional_offset_by(position_angle=sky_ang_b1, separation=sep_b1)
-        dynest_coords[0, 0] = radec_b1.ra.deg
-        dynest_coords[0, 1] = radec_b1.dec.deg
-
-    elif fittype == 'twod_gauss2blob':
-        log_flux, log_sigma, ring_rad, inclination, posangle, dRA, dDec, log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2 = pars
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((2, 2))
-
-        for idx, (dist_b, ang_b) in enumerate([(dist_b1, ang_b1), (dist_b2, ang_b2)]):
-            sky_ang = (posangle + ang_b) * u.deg
-            sep = dist_b * u.arcsecond
-            radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
-            dynest_coords[idx, 0] = radec.ra.deg
-            dynest_coords[idx, 1] = radec.dec.deg
-
-    elif fittype in ('twod_gauss3blob', 'twod_gauss3blob_nonuni', 'twod_gaussring_nonuni_3blob'):
-        posangle = pars[4]
-        dRA = pars[5]
-        dDec = pars[6]
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((3, 2))
-
-        if fittype == 'twod_gauss3blob':
-            blob_params = [(pars[9], pars[10]), (pars[13], pars[14]), (pars[17], pars[18])]
-        else:
-            # Shifted by +1 due to Prof. Offset at index 7
-            blob_params = [(pars[10], pars[11]), (pars[14], pars[15]), (pars[18], pars[19])]
-
-        for idx, (dist_b, ang_b) in enumerate(blob_params):
-            sky_ang = (posangle + ang_b) * u.deg
-            sep = dist_b * u.arcsecond
-            radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
-            dynest_coords[idx, 0] = radec.ra.deg
-            dynest_coords[idx, 1] = radec.dec.deg
-
-    elif fittype == 'resid_gauss1blob':
-        log_flux_b1, log_sigma_b1, dist_b1, ang_b1 = pars
-        # Fixed to the best-fit twod_gauss3blob geometry inside resid_gauss1blob (not sampled)
-        posangle = 18.8479
-        dRA = 0.5973
-        dDec = 0.5284
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((1, 2))
-
-        sky_ang = (posangle + ang_b1) * u.deg
-        sep = dist_b1 * u.arcsecond
-        radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
-        dynest_coords[0, 0] = radec.ra.deg
-        dynest_coords[0, 1] = radec.dec.deg
-
-    elif fittype == 'resid_gauss3blob':
-        log_flux_b1, log_sigma_b1, dist_b1, ang_b1, log_flux_b2, log_sigma_b2, dist_b2, ang_b2, log_flux_b3, log_sigma_b3, dist_b3, ang_b3 = pars
-        # Fixed to the best-fit twod_gauss3blob geometry inside resid_gauss3blob (not sampled)
-        posangle = 18.8479
-        dRA = 0.5973
-        dDec = 0.5284
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((3, 2))
-
-        for idx, (dist_b, ang_b) in enumerate([(dist_b1, ang_b1), (dist_b2, ang_b2), (dist_b3, ang_b3)]):
-            sky_ang = (posangle + ang_b) * u.deg
-            sep = dist_b * u.arcsecond
-            radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
-            dynest_coords[idx, 0] = radec.ra.deg
-            dynest_coords[idx, 1] = radec.dec.deg
-
-    elif fittype in ('simgauss', 'twod_simgauss'):
-        b_p1, b_p2, dist, ang, posangle, dRA, dDec = pars
-        ngc3351 = phase_cent.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
-        dynest_coords = np.zeros((1, 2))
-
-        sky_ang = (posangle + ang) * u.deg
-        sep = dist * u.arcsecond
-        radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
-        dynest_coords[0, 0] = radec.ra.deg
-        dynest_coords[0, 1] = radec.dec.deg
-
     else:
-        msg = f"Invalid fittype '{fittype}', please choose a valid fitting model."
-        logging.warning(msg)
-        raise ValueError(msg)
+        dynest_coords = np.zeros((spec.n_blobs, 2))
+        for k in range(spec.n_blobs):
+            i = spec.blob_index(k)
+            dist_b, ang_b = pars[i + 2], pars[i + 3]
+            # Position angle on the sky: (posangle + ang) East of North
+            sky_ang = (posangle + ang_b) * u.deg
+            sep = dist_b * u.arcsecond
+            radec = ngc3351.directional_offset_by(position_angle=sky_ang, separation=sep)
+            dynest_coords[k, 0] = radec.ra.deg
+            dynest_coords[k, 1] = radec.dec.deg
 
     logging.info(f"Dynesty Coords: {dynest_coords}")
     return dynest_coords

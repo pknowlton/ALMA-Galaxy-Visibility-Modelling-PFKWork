@@ -50,6 +50,7 @@ from dynesty import DynamicNestedSampler
 from dynesty import utils as dyfunc
 from dynesty import plotting as dyplot
 from model_prof import model_prof, model_addon
+from model_defs import get_spec
 from radec_calc import sun_radec, dynest_radec, make_model_wcs
 import prior_tform as pt_stream
 from uvplot import UVTable
@@ -210,9 +211,10 @@ def safe_add_beam(ax, header=None, frame=False, color='white', corner='bottom le
     except Exception as e:
         logging.warning(f"Could not add fallback beam patch: {e}")
 
-def render_summary_table_page(res, pars_bf, weights, fittype, pp):
+def build_summary_rows(res, pars_bf, weights, fittype):
     """
-    Constructs and saves the final summary table PDF page containing:
+    Builds the rows of the final summary table. Each row is
+    [Parameter (unit), Prior Low, Prior High, ML Estimate, Median (+84% / -16%)] and the table contains:
     - Free parameters fitted by Dynesty with integrated units: "Parameter (unit)"
     - Physical conversions:
         - Ring Flux (Jy) [after Ring LogFlux]
@@ -227,6 +229,7 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
     """
     ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
     FWHM_FACTOR = 2.354820045
+    spec = get_spec(fittype)
 
     def get_quantiles(arr):
         return dyfunc.quantile(np.asarray(arr), [0.159, 0.50, 0.841], weights=weights)
@@ -264,7 +267,7 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         ])
 
     # 1. Ring Component (if present in model)
-    if fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss1blob', 'resid_gauss3blob'):
+    if spec.has_ring:
         # Row 1: Ring LogFlux
         q_lf = get_quantiles(res.samples[:, 0])
         add_table_row("Ring LogFlux", "log(Jy)", pt_stream.RING_PRIOR_RANGES[0, 0], pt_stream.RING_PRIOR_RANGES[0, 1],
@@ -360,102 +363,19 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
         add_table_row(f"{blob_label} FWHM", "arcsec", FWHM_FACTOR * prior_sigma_range[0], FWHM_FACTOR * prior_sigma_range[1],
                       FWHM_FACTOR * 10.0**pars_bf[idx_sigma], q_bfwhm)
 
-    # 2. Model-Specific Blob / Profile Components
-    if fittype == 'twod_gaussring_nonuni':
+    # 2. Model-Specific Blob / Profile Components (layout comes from model_defs.py)
+    ranges = pt_stream.PRIOR_RANGES[spec.name]
+    user = pt_stream.BLOB_USER_PRIORS.get(spec.name)
+
+    if spec.is_nonuni:
         q_off = get_quantiles(res.samples[:, 7])
         add_table_row("Prof. Offset", "degrees", pt_stream.NONUNI_RING_PRIOR_RANGES[7, 0], pt_stream.NONUNI_RING_PRIOR_RANGES[7, 1],
                       pars_bf[7], q_off)
 
-    elif fittype == 'twod_gauss1blob':
-        add_blob_component("B1", 7, 8,
-                           pt_stream.GAUSS1BLOB_PRIOR_RANGES[7],
-                           pt_stream.GAUSS1BLOB_USER_PRIORS[0],
-                           pt_stream.GAUSS1BLOB_USER_PRIORS[1])
-        q_dist = get_quantiles(res.samples[:, 9])
-        add_table_row("B1 Dist", "arcsec", pt_stream.GAUSS1BLOB_USER_PRIORS[2, 0], pt_stream.GAUSS1BLOB_USER_PRIORS[2, 1],
-                      pars_bf[9], q_dist)
-        q_ang = get_quantiles(res.samples[:, 10])
-        add_table_row("B1 Angle", "degrees", pt_stream.GAUSS1BLOB_USER_PRIORS[3, 0], pt_stream.GAUSS1BLOB_USER_PRIORS[3, 1],
-                      pars_bf[10], q_ang)
-
-    elif fittype == 'twod_gauss2blob':
-        for k, name in [(1, 'B1'), (2, 'B2')]:
-            idx_base = 7 + (k - 1) * 4
-            u_base = (k - 1) * 4
-            add_blob_component(name, idx_base, idx_base + 1,
-                               pt_stream.GAUSS2BLOB_PRIOR_RANGES[idx_base],
-                               pt_stream.GAUSS2BLOB_USER_PRIORS[u_base],
-                               pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 1])
-            q_dist = get_quantiles(res.samples[:, idx_base + 2])
-            add_table_row(f"{name} Dist", "arcsec", pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 2, 0], pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 2, 1],
-                          pars_bf[idx_base + 2], q_dist)
-            q_ang = get_quantiles(res.samples[:, idx_base + 3])
-            add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS2BLOB_USER_PRIORS[u_base + 3, 1],
-                          pars_bf[idx_base + 3], q_ang)
-
-    elif fittype == 'twod_gauss3blob':
-        for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
-            idx_base = 7 + (k - 1) * 4
-            u_base = (k - 1) * 4
-            add_blob_component(name, idx_base, idx_base + 1,
-                               pt_stream.GAUSS3BLOB_PRIOR_RANGES[idx_base],
-                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base],
-                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 1])
-            q_dist = get_quantiles(res.samples[:, idx_base + 2])
-            add_table_row(f"{name} Dist", "arcsec", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 1],
-                          pars_bf[idx_base + 2], q_dist)
-            q_ang = get_quantiles(res.samples[:, idx_base + 3])
-            add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
-                          pars_bf[idx_base + 3], q_ang)
-
-    elif fittype in ('twod_gauss3blob_nonuni', 'twod_gaussring_nonuni_3blob'):
-        q_off = get_quantiles(res.samples[:, 7])
-        add_table_row("Prof. Offset", "degrees", pt_stream.NONUNI_RING_PRIOR_RANGES[7, 0], pt_stream.NONUNI_RING_PRIOR_RANGES[7, 1],
-                      pars_bf[7], q_off)
-        for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
-            idx_base = 8 + (k - 1) * 4
-            u_base = (k - 1) * 4
-            add_blob_component(name, idx_base, idx_base + 1,
-                               pt_stream.GAUSS3BLOB_NONUNI_PRIOR_RANGES[idx_base],
-                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base],
-                               pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 1])
-            q_dist = get_quantiles(res.samples[:, idx_base + 2])
-            add_table_row(f"{name} Dist", "arcsec", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 2, 1],
-                          pars_bf[idx_base + 2], q_dist)
-            q_ang = get_quantiles(res.samples[:, idx_base + 3])
-            add_table_row(f"{name} Angle", "degrees", pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.GAUSS3BLOB_USER_PRIORS[u_base + 3, 1],
-                          pars_bf[idx_base + 3], q_ang)
-
-    elif fittype == 'resid_gauss1blob':
-        add_blob_component("B1", 0, 1,
-                           pt_stream.RESID1BLOB_PRIOR_RANGES[0],
-                           pt_stream.RESID1BLOB_USER_PRIORS[0],
-                           pt_stream.RESID1BLOB_USER_PRIORS[1])
-        q_dist = get_quantiles(res.samples[:, 2])
-        add_table_row("B1 Dist", "arcsec", pt_stream.RESID1BLOB_USER_PRIORS[2, 0], pt_stream.RESID1BLOB_USER_PRIORS[2, 1],
-                      pars_bf[2], q_dist)
-        q_ang = get_quantiles(res.samples[:, 3])
-        add_table_row("B1 Angle", "degrees", pt_stream.RESID1BLOB_USER_PRIORS[3, 0], pt_stream.RESID1BLOB_USER_PRIORS[3, 1],
-                      pars_bf[3], q_ang)
-
-    elif fittype == 'resid_gauss3blob':
-        for k, name in [(1, 'B1'), (2, 'B2'), (3, 'B3')]:
-            idx_base = (k - 1) * 4
-            u_base = (k - 1) * 4
-            add_blob_component(name, idx_base, idx_base + 1,
-                               pt_stream.RESID3BLOB_PRIOR_RANGES[idx_base],
-                               pt_stream.RESID3BLOB_USER_PRIORS[u_base],
-                               pt_stream.RESID3BLOB_USER_PRIORS[u_base + 1])
-            q_dist = get_quantiles(res.samples[:, idx_base + 2])
-            add_table_row(f"{name} Dist", "arcsec", pt_stream.RESID3BLOB_USER_PRIORS[u_base + 2, 0], pt_stream.RESID3BLOB_USER_PRIORS[u_base + 2, 1],
-                          pars_bf[idx_base + 2], q_dist)
-            q_ang = get_quantiles(res.samples[:, idx_base + 3])
-            add_table_row(f"{name} Angle", "degrees", pt_stream.RESID3BLOB_USER_PRIORS[u_base + 3, 0], pt_stream.RESID3BLOB_USER_PRIORS[u_base + 3, 1],
-                          pars_bf[idx_base + 3], q_ang)
-
-    elif fittype in ('simgauss', 'twod_simgauss'):
-        add_blob_component("Blob", 0, 1,
-                           pt_stream.SIMGAUSS_PRIOR_RANGES[0],
+    if spec.geometry == 'free':
+        # simgauss: one blob followed by its free geometry (Dist, Angle, PA, Offset RA, Offset Dec)
+        add_blob_component(spec.blob_name(0), 0, 1,
+                           ranges[0],
                            pt_stream.SIMGAUSS_USER_PRIORS[0],
                            pt_stream.SIMGAUSS_USER_PRIORS[1])
         sim_names = ["Dist", "Angle", "PA", "Offset RA", "Offset Dec"]
@@ -464,6 +384,33 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
             q_s = get_quantiles(res.samples[:, s_idx])
             add_table_row(s_name, s_unit, pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 0], pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 1],
                           pars_bf[s_idx], q_s)
+    else:
+        for k in range(spec.n_blobs):
+            name = spec.blob_name(k)
+            idx_base = spec.blob_index(k)
+            u_base = 4 * k
+            add_blob_component(name, idx_base, idx_base + 1,
+                               ranges[idx_base],
+                               user[u_base],
+                               user[u_base + 1])
+            q_dist = get_quantiles(res.samples[:, idx_base + 2])
+            add_table_row(f"{name} Dist", "arcsec", user[u_base + 2, 0], user[u_base + 2, 1],
+                          pars_bf[idx_base + 2], q_dist)
+            q_ang = get_quantiles(res.samples[:, idx_base + 3])
+            add_table_row(f"{name} Angle", "degrees", user[u_base + 3, 0], user[u_base + 3, 1],
+                          pars_bf[idx_base + 3], q_ang)
+
+    return table_rows
+
+
+def render_summary_table_page(res, pars_bf, weights, fittype, pp):
+    """
+    Constructs and saves the final summary table PDF page (rows from `build_summary_rows`).
+    - Two-tiered table header:
+        - (Prior information) spanning Prior Low & Prior High
+        - (Results) spanning ML Estimate & Median (+84% / -16%)
+    """
+    table_rows = build_summary_rows(res, pars_bf, weights, fittype)
 
     # Render Multi-Level Table onto Matplotlib Figure
     col_labels = ["Parameter", "Low", "High", "ML Estimate", "Median Estimate"]
@@ -844,19 +791,10 @@ def main():
     mod_wcs = make_model_wcs(phase_center.ra.deg, phase_center.dec.deg, pixarcsec, shape=(numpix, numpix))
 
     # Pre-calculate celestial coordinates for the ring peak profile (white dashed ellipse)
-    has_ring = fittype not in ('simgauss', 'twod_simgauss', 'resid_gauss1blob', 'resid_gauss3blob')
-    if has_ring:
-        ring_rad = pars_bf[2]
-        inc = np.radians(pars_bf[3])
-        pa = np.radians(pars_bf[4])
-        dRA = pars_bf[5]
-        dDec = pars_bf[6]
-    else:
-        ring_rad = 6.3107
-        inc = np.radians(56.4047)
-        pa = np.radians(18.8479)
-        dRA = 0.5973
-        dDec = 0.5284
+    # (Models with their own ring use the fitted values; others use the fixed best-fit 3-blob ring from model_defs.py.)
+    ring_rad, inc_deg, pa_deg, dRA, dDec = get_spec(fittype).display_ring_geometry(pars_bf)
+    inc = np.radians(inc_deg)
+    pa = np.radians(pa_deg)
 
     theta_ellipse = np.linspace(0, 2 * np.pi, 500)
     x_pa = ring_rad * np.cos(inc) * np.sin(theta_ellipse)

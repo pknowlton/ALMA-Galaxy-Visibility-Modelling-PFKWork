@@ -37,9 +37,16 @@ Key Architecture & User Ergonomics:
 
 4. Familiar Table Formatting:
    The user configuration section is styled as a clean, readable table.
+
+5. One Generic Transform Builder:
+   `make_ptform(fittype)` builds every `<fittype>_ptform` function from the parameter
+   layout in `model_defs.py` and the ranges in this file. There are no hand-indexed
+   per-model transforms to keep in sync. To add a model: add it to `model_defs.py`,
+   add its prior table here, and register it in `PRIOR_RANGES`.
 """
 
 import numpy as np
+from model_defs import get_spec
 
 # Physical conversion constant: radians per arcsecond
 ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
@@ -221,348 +228,139 @@ SIMGAUSS_USER_PRIORS = np.array([
 # =============================================================================
 # COMPILED DYNESTY PRIOR RANGES (Pre-computed Ahead of Sampling)
 # =============================================================================
+# The tables above are in intuitive units. The functions below convert them ONCE,
+# at import time, into the (log_flux, log_sigma) ranges that Dynesty samples.
 
-def compile_all_priors():
+def compile_ring_block():
     """
-    Compiles all user-defined intuitive priors into the (log_flux, log_sigma)
-    parameter ranges sampled by Dynesty. This runs ONCE at module load time.
+    Compiles the shared ring priors: ring peak [log10(Jy/sr)] -> LogFlux [log10(Jy)],
+    ring sigma [arcsec] -> LogSigma [log10(arcsec)]. Other rows are unchanged.
     """
-    # 1. Shared Ring Priors
-    r_comp = np.copy(COMMON_RING_PRIORS)
-    r_comp[0, 0] = ring_peak_to_logflux(COMMON_RING_PRIORS[0, 0], rad_bounds=COMMON_RING_PRIORS[2], sigma_bounds=COMMON_RING_PRIORS[1])
-    r_comp[0, 1] = ring_peak_to_logflux(COMMON_RING_PRIORS[0, 1], rad_bounds=COMMON_RING_PRIORS[2], sigma_bounds=COMMON_RING_PRIORS[1])
-    r_comp[1, 0] = sigma_to_logsigma(COMMON_RING_PRIORS[1, 0])
-    r_comp[1, 1] = sigma_to_logsigma(COMMON_RING_PRIORS[1, 1])
-
-    # 2. twod_gaussring_nonuni (Ring + Azimuthal Offset)
-    nonuni_ring_ranges = np.vstack([r_comp, GAUSSRING_NONUNI_USER_PRIORS])
-
-    # 3. twod_gauss1blob (Ring + 1 Blob)
-    b1_comp = np.copy(GAUSS1BLOB_USER_PRIORS)
-    b1_comp[0, 0] = blob_peak_to_logflux(GAUSS1BLOB_USER_PRIORS[0, 0], sigma_bounds=GAUSS1BLOB_USER_PRIORS[1])
-    b1_comp[0, 1] = blob_peak_to_logflux(GAUSS1BLOB_USER_PRIORS[0, 1], sigma_bounds=GAUSS1BLOB_USER_PRIORS[1])
-    b1_comp[1, 0] = sigma_to_logsigma(GAUSS1BLOB_USER_PRIORS[1, 0])
-    b1_comp[1, 1] = sigma_to_logsigma(GAUSS1BLOB_USER_PRIORS[1, 1])
-    gauss1blob_ranges = np.vstack([r_comp, b1_comp])
-
-    # 4. twod_gauss2blob (Ring + 2 Clumps)
-    b2b_comp = np.copy(GAUSS2BLOB_USER_PRIORS)
-    for k in (0, 4):
-        b2b_comp[k, 0] = blob_peak_to_logflux(GAUSS2BLOB_USER_PRIORS[k, 0], sigma_bounds=GAUSS2BLOB_USER_PRIORS[k + 1])
-        b2b_comp[k, 1] = blob_peak_to_logflux(GAUSS2BLOB_USER_PRIORS[k, 1], sigma_bounds=GAUSS2BLOB_USER_PRIORS[k + 1])
-        b2b_comp[k + 1, 0] = sigma_to_logsigma(GAUSS2BLOB_USER_PRIORS[k + 1, 0])
-        b2b_comp[k + 1, 1] = sigma_to_logsigma(GAUSS2BLOB_USER_PRIORS[k + 1, 1])
-    gauss2blob_ranges = np.vstack([r_comp, b2b_comp])
-
-    # 5. twod_gauss3blob (Ring + 3 Clumps)
-    b3_comp = np.copy(GAUSS3BLOB_USER_PRIORS)
-    for k in (0, 4, 8):
-        b3_comp[k, 0] = blob_peak_to_logflux(GAUSS3BLOB_USER_PRIORS[k, 0], sigma_bounds=GAUSS3BLOB_USER_PRIORS[k + 1])
-        b3_comp[k, 1] = blob_peak_to_logflux(GAUSS3BLOB_USER_PRIORS[k, 1], sigma_bounds=GAUSS3BLOB_USER_PRIORS[k + 1])
-        b3_comp[k + 1, 0] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 0])
-        b3_comp[k + 1, 1] = sigma_to_logsigma(GAUSS3BLOB_USER_PRIORS[k + 1, 1])
-    gauss3blob_ranges = np.vstack([r_comp, b3_comp])
-
-    # 6. twod_gauss3blob_nonuni (Non-Uniform Ring + 3 Clumps)
-    gauss3blob_nonuni_ranges = np.vstack([nonuni_ring_ranges, b3_comp])
-
-    # 7. resid_gauss1blob (1 Clump, residual map; no ring block)
-    resid1_comp = np.copy(RESID1BLOB_USER_PRIORS)
-    resid1_comp[0, 0] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 0], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
-    resid1_comp[0, 1] = blob_peak_to_logflux(RESID1BLOB_USER_PRIORS[0, 1], sigma_bounds=RESID1BLOB_USER_PRIORS[1])
-    resid1_comp[1, 0] = sigma_to_logsigma(RESID1BLOB_USER_PRIORS[1, 0])
-    resid1_comp[1, 1] = sigma_to_logsigma(RESID1BLOB_USER_PRIORS[1, 1])
-    resid1blob_ranges = resid1_comp
-
-    # 8. resid_gauss3blob (3 Clumps, residual map; no ring block)
-    resid_comp = np.copy(RESID3BLOB_USER_PRIORS)
-    for k in (0, 4, 8):
-        resid_comp[k, 0] = blob_peak_to_logflux(RESID3BLOB_USER_PRIORS[k, 0], sigma_bounds=RESID3BLOB_USER_PRIORS[k + 1])
-        resid_comp[k, 1] = blob_peak_to_logflux(RESID3BLOB_USER_PRIORS[k, 1], sigma_bounds=RESID3BLOB_USER_PRIORS[k + 1])
-        resid_comp[k + 1, 0] = sigma_to_logsigma(RESID3BLOB_USER_PRIORS[k + 1, 0])
-        resid_comp[k + 1, 1] = sigma_to_logsigma(RESID3BLOB_USER_PRIORS[k + 1, 1])
-    resid3blob_ranges = resid_comp
-
-    # 9. simgauss (Simulated Single Blob Test Model)
-    sim_comp = np.copy(SIMGAUSS_USER_PRIORS)
-    sim_comp[0, 0] = float(np.round(SIMGAUSS_USER_PRIORS[0, 0] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 0] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
-    sim_comp[0, 1] = float(np.round(SIMGAUSS_USER_PRIORS[0, 1] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 1] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
-    sim_comp[1, 0] = sigma_to_logsigma(SIMGAUSS_USER_PRIORS[1, 0])
-    sim_comp[1, 1] = sigma_to_logsigma(SIMGAUSS_USER_PRIORS[1, 1])
-
-    return (
-        r_comp,
-        nonuni_ring_ranges,
-        gauss1blob_ranges,
-        gauss2blob_ranges,
-        gauss3blob_ranges,
-        gauss3blob_nonuni_ranges,
-        resid1blob_ranges,
-        resid3blob_ranges,
-        sim_comp
-    )
+    comp = np.copy(COMMON_RING_PRIORS)
+    comp[0, 0] = ring_peak_to_logflux(COMMON_RING_PRIORS[0, 0], rad_bounds=COMMON_RING_PRIORS[2], sigma_bounds=COMMON_RING_PRIORS[1])
+    comp[0, 1] = ring_peak_to_logflux(COMMON_RING_PRIORS[0, 1], rad_bounds=COMMON_RING_PRIORS[2], sigma_bounds=COMMON_RING_PRIORS[1])
+    comp[1, 0] = sigma_to_logsigma(COMMON_RING_PRIORS[1, 0])
+    comp[1, 1] = sigma_to_logsigma(COMMON_RING_PRIORS[1, 1])
+    return comp
 
 
-# Compile ranges immediately upon module import
-(
-    RING_PRIOR_RANGES,
-    NONUNI_RING_PRIOR_RANGES,
-    GAUSS1BLOB_PRIOR_RANGES,
-    GAUSS2BLOB_PRIOR_RANGES,
-    GAUSS3BLOB_PRIOR_RANGES,
-    GAUSS3BLOB_NONUNI_PRIOR_RANGES,
-    RESID1BLOB_PRIOR_RANGES,
-    RESID3BLOB_PRIOR_RANGES,
-    SIMGAUSS_PRIOR_RANGES
-) = compile_all_priors()
+def compile_blob_block(user_priors):
+    """
+    Compiles any stack of blob priors (4 rows per blob: Peak, Sigma, Dist, Angle):
+    blob peak [log10(Jy/sr)] -> LogFlux [log10(Jy)], blob sigma [arcsec] -> LogSigma [log10(arcsec)].
+    Dist and Angle rows are unchanged.
+    """
+    comp = np.copy(user_priors)
+    for k in range(0, len(user_priors), 4):
+        comp[k, 0] = blob_peak_to_logflux(user_priors[k, 0], sigma_bounds=user_priors[k + 1])
+        comp[k, 1] = blob_peak_to_logflux(user_priors[k, 1], sigma_bounds=user_priors[k + 1])
+        comp[k + 1, 0] = sigma_to_logsigma(user_priors[k + 1, 0])
+        comp[k + 1, 1] = sigma_to_logsigma(user_priors[k + 1, 1])
+    return comp
+
+
+def compile_simgauss_block():
+    """
+    Compiles the simulated single-blob test priors. (Uses its own flux conversion with
+    the lower/upper sigma bound, rounded to 2 decimals.)
+    """
+    comp = np.copy(SIMGAUSS_USER_PRIORS)
+    comp[0, 0] = float(np.round(SIMGAUSS_USER_PRIORS[0, 0] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 0] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
+    comp[0, 1] = float(np.round(SIMGAUSS_USER_PRIORS[0, 1] + 2.0 * np.log10(SIMGAUSS_USER_PRIORS[1, 1] * ARCSEC_TO_RAD) + np.log10(2.0 * np.pi), 2))
+    comp[1, 0] = sigma_to_logsigma(SIMGAUSS_USER_PRIORS[1, 0])
+    comp[1, 1] = sigma_to_logsigma(SIMGAUSS_USER_PRIORS[1, 1])
+    return comp
+
+
+# Compile ranges immediately upon module import.
+# Parameter order for ring models is [ring block][Prof. Offset if non-uniform][blob 1][blob 2]...
+# (the layout itself is defined in model_defs.py).
+RING_PRIOR_RANGES = compile_ring_block()
+NONUNI_RING_PRIOR_RANGES = np.vstack([RING_PRIOR_RANGES, GAUSSRING_NONUNI_USER_PRIORS])
+GAUSS1BLOB_PRIOR_RANGES = np.vstack([RING_PRIOR_RANGES, compile_blob_block(GAUSS1BLOB_USER_PRIORS)])
+GAUSS2BLOB_PRIOR_RANGES = np.vstack([RING_PRIOR_RANGES, compile_blob_block(GAUSS2BLOB_USER_PRIORS)])
+GAUSS3BLOB_PRIOR_RANGES = np.vstack([RING_PRIOR_RANGES, compile_blob_block(GAUSS3BLOB_USER_PRIORS)])
+GAUSS3BLOB_NONUNI_PRIOR_RANGES = np.vstack([NONUNI_RING_PRIOR_RANGES, compile_blob_block(GAUSS3BLOB_USER_PRIORS)])
+RESID1BLOB_PRIOR_RANGES = compile_blob_block(RESID1BLOB_USER_PRIORS)
+RESID3BLOB_PRIOR_RANGES = compile_blob_block(RESID3BLOB_USER_PRIORS)
+SIMGAUSS_PRIOR_RANGES = compile_simgauss_block()
+
+# Compiled ranges, and the raw (intuitive-unit) blob priors, looked up by fittype name.
+# Used by the transforms below and by the summary table in visualize_dynesty.py.
+PRIOR_RANGES = {
+    'twod_gaussring': RING_PRIOR_RANGES,
+    'twod_gaussring_nonuni': NONUNI_RING_PRIOR_RANGES,
+    'twod_gauss1blob': GAUSS1BLOB_PRIOR_RANGES,
+    'twod_gauss2blob': GAUSS2BLOB_PRIOR_RANGES,
+    'twod_gauss3blob': GAUSS3BLOB_PRIOR_RANGES,
+    'twod_gauss3blob_nonuni': GAUSS3BLOB_NONUNI_PRIOR_RANGES,
+    'resid_gauss1blob': RESID1BLOB_PRIOR_RANGES,
+    'resid_gauss3blob': RESID3BLOB_PRIOR_RANGES,
+    'simgauss': SIMGAUSS_PRIOR_RANGES,
+}
+
+BLOB_USER_PRIORS = {
+    'twod_gauss1blob': GAUSS1BLOB_USER_PRIORS,
+    'twod_gauss2blob': GAUSS2BLOB_USER_PRIORS,
+    'twod_gauss3blob': GAUSS3BLOB_USER_PRIORS,
+    'twod_gauss3blob_nonuni': GAUSS3BLOB_USER_PRIORS,
+    'resid_gauss1blob': RESID1BLOB_USER_PRIORS,
+    'resid_gauss3blob': RESID3BLOB_USER_PRIORS,
+    'simgauss': SIMGAUSS_USER_PRIORS,
+}
 
 
 # =============================================================================
 # PRIOR TRANSFORM FUNCTIONS (Fast Sampling Execution: No Runtime Conversions)
 # =============================================================================
+# Every parameter is mapped linearly from the unit cube onto its [low, high]
+# range, except blob radial distances, which use the uniform-area transform
+# (so blobs are not over-sampled near the ring centre).
+#
+# Blob angular windows (set in the USER_PRIORS tables above) are deliberately
+# distinct and non-overlapping (North, South-West, South-East clumps) to break
+# permutation symmetry between blobs and avoid label switching.
 
-#########################
-### 2D Gaussian Ring (7 parameters)
-#########################
-
-def twod_gaussring_ptform(u):
+def make_ptform(fittype):
     """
-    Prior transform for 2D Gaussian Ring model (7 parameters).
-    Parameters: [Ring LogFlux, Ring LogSigma, Radius, Inc, PA, dRA, dDec].
+    Builds the prior transform u -> theta for a fittype.
+
+    The parameter layout comes from model_defs.py; the ranges from PRIOR_RANGES.
     """
-    u = np.asarray(u)
-    low = RING_PRIOR_RANGES[:, 0]
-    high = RING_PRIOR_RANGES[:, 1]
-    return low + u * (high - low)
+    spec = get_spec(fittype)
+    ranges = PRIOR_RANGES[spec.name]
+    if len(ranges) != spec.ndim:
+        raise ValueError(f"Prior table for '{spec.name}' has {len(ranges)} rows but the model has {spec.ndim} parameters.")
+
+    low = ranges[:, 0].copy()
+    high = ranges[:, 1].copy()
+    span = high - low
+    area_dims = tuple(spec.area_dims)
+
+    def ptform(u):
+        u = np.asarray(u)
+        v = low + u * span
+        for i in area_dims:
+            v[i] = uniform_area_radius(u[i], low[i], high[i])
+        return v
+
+    ptform.__name__ = f"{spec.name}_ptform"
+    ptform.__doc__ = f"Prior transform for '{spec.name}' ({spec.ndim} parameters)."
+    return ptform
 
 
-#########################
-### 2D Non-Uniform Gaussian Ring (8 parameters)
-#########################
+twod_gaussring_ptform = make_ptform('twod_gaussring')                    # 7 parameters
+twod_gaussring_nonuni_ptform = make_ptform('twod_gaussring_nonuni')      # 8 parameters
+twod_gauss1blob_ptform = make_ptform('twod_gauss1blob')                  # 11 parameters
+twod_gauss2blob_ptform = make_ptform('twod_gauss2blob')                  # 15 parameters
+twod_gauss3blob_ptform = make_ptform('twod_gauss3blob')                  # 19 parameters
+twod_gauss3blob_nonuni_ptform = make_ptform('twod_gauss3blob_nonuni')    # 20 parameters
+resid_gauss1blob_ptform = make_ptform('resid_gauss1blob')                # 4 parameters (PA, dRA, dDec fixed)
+resid_gauss3blob_ptform = make_ptform('resid_gauss3blob')                # 12 parameters (PA, dRA, dDec fixed)
+simgauss_ptform = make_ptform('simgauss')                                # 7 parameters
 
-def twod_gaussring_nonuni_ptform(u):
-    """
-    Prior transform for 2D Non-Uniform Gaussian Ring model (8 parameters).
-    Parameters: [Ring LogFlux, Ring LogSigma, Radius, Inc, PA, dRA, dDec, Prof. Offset].
-    """
-    u = np.asarray(u)
-    low = NONUNI_RING_PRIOR_RANGES[:, 0]
-    high = NONUNI_RING_PRIOR_RANGES[:, 1]
-    return low + u * (high - low)
-
-
-#########################
-### 2D Gaussian Ring + 1 Gaussian Blob (11 parameters)
-#########################
-
-def twod_gauss1blob_ptform(u):
-    """
-    Prior transform for 2D Gaussian Ring + 1 Gaussian Blob (11 parameters).
-    Ring parameters (0-6) shared with twod_gaussring.
-    Blob 1 parameters: [Blob LogFlux, Blob LogSigma, Dist, Angle].
-    """
-    u = np.asarray(u)
-    v = np.empty(11, dtype=float)
-    low = GAUSS1BLOB_PRIOR_RANGES[:, 0]
-    high = GAUSS1BLOB_PRIOR_RANGES[:, 1]
-
-    # Linear parameters: Ring (0-6) and Blob LogFlux, LogSigma (7-8)
-    v[:9] = low[:9] + u[:9] * (high[:9] - low[:9])
-    # Radial distance (index 9) with uniform area Jacobian on disk
-    v[9] = uniform_area_radius(u[9], low[9], high[9])
-    # Azimuthal angle (index 10)
-    v[10] = low[10] + u[10] * (high[10] - low[10])
-    return v
-
-
-#########################
-### 2D Gaussian Ring + 2 Gaussian Blobs (15 parameters)
-#########################
-
-def twod_gauss2blob_ptform(u):
-    """
-    Prior transform for 2D Gaussian Ring + 2 Gaussian Blobs (15 parameters).
-    Ring parameters (0-6) shared with twod_gaussring.
-    Blob 1: North clump [330.0, 390.0] deg
-    Blob 2: South-West clump [177.0, 205.0] deg
-    """
-    u = np.asarray(u)
-    v = np.empty(15, dtype=float)
-    low = GAUSS2BLOB_PRIOR_RANGES[:, 0]
-    high = GAUSS2BLOB_PRIOR_RANGES[:, 1]
-
-    # Ring (0-6)
-    v[:7] = low[:7] + u[:7] * (high[:7] - low[:7])
-
-    # Blob 1: North clump
-    v[7:9] = low[7:9] + u[7:9] * (high[7:9] - low[7:9])
-    v[9] = uniform_area_radius(u[9], low[9], high[9])
-    v[10] = low[10] + u[10] * (high[10] - low[10])
-
-    # Blob 2: South-West clump
-    v[11:13] = low[11:13] + u[11:13] * (high[11:13] - low[11:13])
-    v[13] = uniform_area_radius(u[13], low[13], high[13])
-    v[14] = low[14] + u[14] * (high[14] - low[14])
-    return v
-
-
-#########################
-### 2D Gaussian Ring + 3 Gaussian Blobs (19 parameters)
-#########################
-
-def twod_gauss3blob_ptform(u):
-    """
-    Prior transform for 2D Gaussian Ring + 3 Gaussian Blobs (19 parameters).
-    Assigns distinct, non-overlapping angular regions to Blobs 1, 2, and 3
-    to break permutation symmetry and avoid label switching:
-      - Blob 1: North clump [330.0, 390.0] deg
-      - Blob 2: South-West clump [177.0, 205.0] deg
-      - Blob 3: South-East clump [155.0, 177.0] deg
-    """
-    u = np.asarray(u)
-    v = np.empty(19, dtype=float)
-    low = GAUSS3BLOB_PRIOR_RANGES[:, 0]
-    high = GAUSS3BLOB_PRIOR_RANGES[:, 1]
-
-    # Ring (0-6)
-    v[:7] = low[:7] + u[:7] * (high[:7] - low[:7])
-
-    # Blob 1: North clump (disk angle ~348 deg)
-    v[7:9] = low[7:9] + u[7:9] * (high[7:9] - low[7:9])
-    v[9] = uniform_area_radius(u[9], low[9], high[9])
-    v[10] = low[10] + u[10] * (high[10] - low[10])
-
-    # Blob 2: South-West clump (disk angle ~182-185 deg)
-    v[11:13] = low[11:13] + u[11:13] * (high[11:13] - low[11:13])
-    v[13] = uniform_area_radius(u[13], low[13], high[13])
-    v[14] = low[14] + u[14] * (high[14] - low[14])
-
-    # Blob 3: South-East clump (disk angle ~171 deg)
-    v[15:17] = low[15:17] + u[15:17] * (high[15:17] - low[15:17])
-    v[17] = uniform_area_radius(u[17], low[17], high[17])
-    v[18] = low[18] + u[18] * (high[18] - low[18])
-    return v
-
-
-#########################
-### 2D Non-Uniform Gaussian Ring + 3 Gaussian Blobs (20 parameters)
-#########################
-
-def twod_gauss3blob_nonuni_ptform(u):
-    r"""
-    Prior transform for 2D Non-Uniform Gaussian Ring + 3 Gaussian Blobs (20 parameters).
-    Parameters:
-      0-6: Shared Ring (LogFlux, LogSigma, Rad, Inc, PA, dRA, dDec)
-      7:   Non-Uniform Profile Azimuthal Offset [0.0, 180.0] deg
-      8-11:  Blob 1 [LogFlux, LogSigma, Dist, Angle] (North clump [330.0, 390.0] deg)
-      12-15: Blob 2 [LogFlux, LogSigma, Dist, Angle] (South-West clump [177.0, 205.0] deg)
-      16-19: Blob 3 [LogFlux, LogSigma, Dist, Angle] (South-East clump [155.0, 177.0] deg)
-    """
-    u = np.asarray(u)
-    v = np.empty(20, dtype=float)
-    low = GAUSS3BLOB_NONUNI_PRIOR_RANGES[:, 0]
-    high = GAUSS3BLOB_NONUNI_PRIOR_RANGES[:, 1]
-
-    # Ring (0-6) and Profile Offset (7)
-    v[:8] = low[:8] + u[:8] * (high[:8] - low[:8])
-
-    # Blob 1: North clump (disk angle ~348 deg)
-    v[8:10] = low[8:10] + u[8:10] * (high[8:10] - low[8:10])
-    v[10] = uniform_area_radius(u[10], low[10], high[10])
-    v[11] = low[11] + u[11] * (high[11] - low[11])
-
-    # Blob 2: South-West clump (disk angle ~182-185 deg)
-    v[12:14] = low[12:14] + u[12:14] * (high[12:14] - low[12:14])
-    v[14] = uniform_area_radius(u[14], low[14], high[14])
-    v[15] = low[15] + u[15] * (high[15] - low[15])
-
-    # Blob 3: South-East clump (disk angle ~171 deg)
-    v[16:18] = low[16:18] + u[16:18] * (high[16:18] - low[16:18])
-    v[18] = uniform_area_radius(u[18], low[18], high[18])
-    v[19] = low[19] + u[19] * (high[19] - low[19])
-    return v
-
+# Alternate fittype spellings (see ALIASES in model_defs.py)
 twod_gaussring_nonuni_3blob_ptform = twod_gauss3blob_nonuni_ptform
-
-
-#########################
-### Residual map + 1 Gaussian Blob (4 parameters)
-#########################
-
-def resid_gauss1blob_ptform(u):
-    """
-    Prior transform for 1 Gaussian Blob on a residual map (4 parameters).
-    Disk PA, centroid dRA, and dDec are fixed inside the model and are not sampled.
-    Blob parameters: [Blob LogFlux, Blob LogSigma, Dist, Angle].
-    Radial distance is sampled uniformly in area on the disk.
-    Angular range is set in RESID1BLOB_USER_PRIORS.
-    """
-    u = np.asarray(u)
-    v = np.empty(4, dtype=float)
-    low = RESID1BLOB_PRIOR_RANGES[:, 0]
-    high = RESID1BLOB_PRIOR_RANGES[:, 1]
-
-    v[0:2] = low[0:2] + u[0:2] * (high[0:2] - low[0:2])
-    v[2] = uniform_area_radius(u[2], low[2], high[2])
-    v[3] = low[3] + u[3] * (high[3] - low[3])
-    return v
-
-
-#########################
-### Residual map + 3 Gaussian Blobs (12 parameters)
-#########################
-
-def resid_gauss3blob_ptform(u):
-    """
-    Prior transform for 3 Gaussian Blobs on a residual map (12 parameters).
-    Disk PA, centroid dRA, and dDec are fixed inside the model and are not sampled.
-    Blob parameters: [Blob LogFlux, Blob LogSigma, Dist, Angle] for Blobs 1, 2, and 3.
-    Radial distances are sampled uniformly in area on the disk.
-    Angular ranges are those set in RESID3BLOB_USER_PRIORS.
-    """
-    u = np.asarray(u)
-    v = np.empty(12, dtype=float)
-    low = RESID3BLOB_PRIOR_RANGES[:, 0]
-    high = RESID3BLOB_PRIOR_RANGES[:, 1]
-
-    # Blob 1
-    v[0:2] = low[0:2] + u[0:2] * (high[0:2] - low[0:2])
-    v[2] = uniform_area_radius(u[2], low[2], high[2])
-    v[3] = low[3] + u[3] * (high[3] - low[3])
-
-    # Blob 2
-    v[4:6] = low[4:6] + u[4:6] * (high[4:6] - low[4:6])
-    v[6] = uniform_area_radius(u[6], low[6], high[6])
-    v[7] = low[7] + u[7] * (high[7] - low[7])
-
-    # Blob 3
-    v[8:10] = low[8:10] + u[8:10] * (high[8:10] - low[8:10])
-    v[10] = uniform_area_radius(u[10], low[10], high[10])
-    v[11] = low[11] + u[11] * (high[11] - low[11])
-    return v
-
-
-#########################
-### Simulated Single Gaussian Blob (7 parameters)
-#########################
-
-def simgauss_ptform(u):
-    """
-    Prior transform for simulated single Gaussian blob test model (7 parameters).
-    """
-    u = np.asarray(u)
-    v = np.empty(7, dtype=float)
-    low = SIMGAUSS_PRIOR_RANGES[:, 0]
-    high = SIMGAUSS_PRIOR_RANGES[:, 1]
-
-    # LogFlux and LogSigma (0, 1)
-    v[0:2] = low[0:2] + u[0:2] * (high[0:2] - low[0:2])
-    # Radial distance (index 2) with uniform area Jacobian
-    v[2] = uniform_area_radius(u[2], low[2], high[2])
-    # Angle, PA, dRA, dDec (indices 3-6)
-    v[3:7] = low[3:7] + u[3:7] * (high[3:7] - low[3:7])
-    return v
-
 twod_simgauss_ptform = simgauss_ptform
 
 
