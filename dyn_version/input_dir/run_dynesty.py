@@ -23,10 +23,10 @@ Key Concepts:
   to single threads to prevent CPU oversubscription.
 
 Usage:
-    python agy_run_dynesty.py <fittype> [--nlive 500] [--maxbatch 5] [--dlogz 0.1] [--seed 42] [--resume]
+    python run_dynesty.py <fittype> [--nlive 500] [--maxbatch 5] [--dlogz 0.1] [--seed 42] [--resume]
 
 Example:
-    python agy_run_dynesty.py twod_gaussring --nlive 500 --maxbatch 5 --dlogz 0.1 --seed 42
+    python run_dynesty.py twod_gaussring --nlive 500 --maxbatch 5 --dlogz 0.1 --seed 42
 """
 
 import os
@@ -51,7 +51,7 @@ from dynesty import DynamicNestedSampler
 
 from galario.double import get_image_size
 from model_prof import model_prof, model_addon
-import prior_tform_streamline as prior_tform
+import prior_tform
 
 # Module-level variable to store visibility data, avoiding inter-process serialization overhead
 GLOBAL_DATA = None
@@ -179,7 +179,7 @@ def main():
     try:
         prior_transform = getattr(prior_tform, f"{fittype}_ptform")
     except AttributeError:
-        msg = f"No prior function '{fittype}_ptform' found in prior_tform_streamline.py, please check spelling or add function."
+        msg = f"No prior function '{fittype}_ptform' found in prior_tform.py, please check spelling or add function."
         logging.warning(msg)
         raise ValueError(msg)
 

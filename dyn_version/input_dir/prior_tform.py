@@ -36,8 +36,7 @@ Key Architecture & User Ergonomics:
    Ring-free models (`simgauss`, `resid_gauss1blob`, `resid_gauss3blob`) do not use `COMMON_RING_PRIORS`.
 
 4. Familiar Table Formatting:
-   The user configuration section is styled cleanly and intuitively, matching
-   the readable table format of the original `prior_tform.py`.
+   The user configuration section is styled as a clean, readable table.
 """
 
 import numpy as np

@@ -14,9 +14,9 @@
 #   $1 - IN_DIR:    Path to directory containing input Python scripts and modules.
 #   $2 - OUT_DIR:   Persistent destination directory for output logs, models, and plots.
 #   $3 - DATA_PATH: Absolute path to the calibrated UV visibility table (ASCII format).
-#   $4 - FITTYPE:   Model identifier defining the geometry (e.g., 'twod_gaussring',
+#   $4 - FITTYPE:   Model identifier defining the geometry (e.g., 'twod_gaussring', 'twod_gaussring_nonuni',
 #                   'twod_gauss1blob', 'twod_gauss1blob_2peak', 'twod_gauss1blob_2peak_dp',
-#                   'twod_gauss3blob', 'simgauss').
+#                   'twod_gauss2blob', 'twod_gauss3blob', 'twod_gauss3blob_nonuni', 'resid_gauss1blob', 'resid_gauss3blob', 'simgauss').
 #
 # Environment:
 #   Requires the 'pk_env_38' Conda environment (Python <= 3.8) containing Galario,
@@ -82,12 +82,12 @@ cd "${STAGING_DIR}"
 
 pwd
 ls
-ls casa_dir_simgauss
+ls casa_dir_freq_residii
 
 echo "Starting run at $(date)"
 
 # Step 4a: Run dynamic nested sampling with Dynesty to fit the model to UV visibilities
-conda run -n pk_env_38 python agy_run_dynesty.py $4
+conda run -n pk_env_38 python run_dynesty.py $4
 
 # Step 4b: Run post-processing to generate diagnostic plots, CASA CLEAN images, and PDFs
 conda run -n pk_env_38 python visualize_dynesty.py $4

@@ -13,7 +13,7 @@
   - [Why Model in the Visibility (Fourier) Domain?](#why-model-in-the-visibility-fourier-domain)
   - [Why Dynamic Nested Sampling (`dynesty`)?](#why-dynamic-nested-sampling-dynesty)
 - [Repository History & Context](#repository-history--context)
-- [Pipeline Architecture (`dynesty_version`)](#pipeline-architecture-dynesty_version)
+- [Pipeline Architecture (`dyn_version`)](#pipeline-architecture-dyn_version)
   - [Workflow Overview](#workflow-overview)
   - [File & Directory Structure](#file--directory-structure)
 - [Software Prerequisites & Environments](#software-prerequisites--environments)
@@ -55,14 +55,14 @@ Previous versions of this pipeline relied on Markov Chain Monte Carlo (MCMC) via
 ## Repository History & Context
 
 - **Emily Carver's Original Repository**: Provided the initial groundwork for ALMA visibility modeling using MCMC sampling.
-- **MCMC Archive (`emcee_version/`)**: Contains the historical MCMC implementation based on `emcee`.
-- **Current Dynamic Nested Sampling Version (`dynesty_version/`)**: Redesigned to utilize `dynesty` nested sampling, multi-core multiprocessing pools, node-local scratch staging, resource profiling, and integrated CASA residual imaging.
+- **MCMC / earlier versions**: The historical `emcee` MCMC and ADVI implementations are no longer in this branch; they remain in git history on the `msc-v1-archive` and `msc-v2` branches.
+- **Current Dynamic Nested Sampling Version (`dyn_version/`)**: Redesigned to utilize `dynesty` nested sampling, multi-core multiprocessing pools, node-local scratch staging, resource profiling, and integrated CASA residual imaging.
 
 ---
 
-## Pipeline Architecture (`dynesty_version`)
+## Pipeline Architecture (`dyn_version`)
 
-The `dynesty_version/` directory contains an end-to-end distributed workflow designed for high-performance batch execution on the **CANFAR** (Canadian Advanced Network for Astronomical Research) cloud infrastructurs.
+The `dyn_version/` directory contains an end-to-end distributed workflow designed for high-performance batch execution on the **CANFAR** (Canadian Advanced Network for Astronomical Research) cloud infrastructurs.
 
 ### Workflow Overview
 
@@ -71,7 +71,7 @@ flowchart TD
     A["launch_headless_scratch.py<br>(CANFAR Skaha Session)"] --> B["launch_fittings_scratch_bshlog_pfk.sh<br>(Pre-allocates scratch & logs stdout/stderr)"]
     B --> C["launch_fittings_scratch_psrec_pfk.sh<br>(psrecord CPU & Memory Profiling)"]
     C --> D["launch_fittings_scratch_pfk.sh<br>(Core Execution & Scratch Staging)"]
-    D --> E["input_dir/agy_run_dynesty.py<br>(Dynesty Dynamic Nested Sampling + Galario)"]
+    D --> E["input_dir/run_dynesty.py<br>(Dynesty Dynamic Nested Sampling + Galario)"]
     E --> F["output/<fittype>_checkpoint.save<br>& output/<fittype>_dynesty.log"]
     F --> G["input_dir/visualize_dynesty.py<br>(Residuals, CASA tclean & Multi-panel Plots)"]
     G --> H["output/<fittype>_plots.pdf"]
@@ -81,13 +81,13 @@ flowchart TD
 ### File & Directory Structure
 
 ```
-dynesty_version/
+dyn_version/
 ├── launch_headless_scratch.py              # Python launcher for CANFAR Skaha batch sessions
 ├── launch_fittings_scratch_bshlog_pfk.sh   # Logging wrapper: captures live stdout/stderr to bashlog.txt
 ├── launch_fittings_scratch_psrec_pfk.sh    # Profiler wrapper: tracks CPU/RAM usage with psrecord
 ├── launch_fittings_scratch_pfk.sh          # Core shell runner: scratch staging, Conda activation & cleanup
 └── input_dir/                              # Code and model definitions executed on compute node
-    ├── agy_run_dynesty.py                  # Main Dynesty sampling driver with multiprocessing Pool
+    ├── run_dynesty.py                  # Main Dynesty sampling driver with multiprocessing Pool
     ├── model_prof.py                       # 2D parametric brightness models & Galario interface
     ├── prior_tform.py                      # Unit hypercube prior transformations for Dynesty
     ├── radec_calc.py                       # Celestial coordinate conversions (Sun et al. clusters & model blobs)
@@ -131,7 +131,7 @@ This launches a headless container with 16 CPU cores, executes the full pipeline
 
 ### Supported Model Profiles (`fittype`)
 
-The pipeline implements multiple parametric models in `dynesty_version/input_dir/model_prof.py`:
+The pipeline implements multiple parametric models in `dyn_version/input_dir/model_prof.py`:
 
 | `fittype` | Parameters ($N_{\text{dim}}$) | Description |
 | :--- | :---: | :--- |

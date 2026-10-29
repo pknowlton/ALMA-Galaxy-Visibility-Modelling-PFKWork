@@ -36,7 +36,7 @@ FITTYPE=$5
 echo "Fit Type:         $FITTYPE"
 
 # Path to the core execution script being profiled
-BSH_CMD="/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dynesty_version_fixed/launch_fittings_scratch_pfk.sh"
+BSH_CMD="/arc/projects/uvdisk_fit/git_repo/ALMA-Galaxy-Visibility-Modelling-PFK/dyn_version/launch_fittings_scratch_pfk.sh"
 
 # Directory dedicated to accumulating resource monitoring records across runs
 PSR_DIR="/arc/projects/uvdisk_fit/dynest_product_dir/resource_usage"

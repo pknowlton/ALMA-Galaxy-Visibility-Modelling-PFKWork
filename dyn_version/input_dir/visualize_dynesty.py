@@ -51,7 +51,7 @@ from dynesty import utils as dyfunc
 from dynesty import plotting as dyplot
 from model_prof import model_prof, model_addon
 from radec_calc import sun_radec, dynest_radec, make_model_wcs
-import prior_tform_streamline as pt_stream
+import prior_tform as pt_stream
 from uvplot import UVTable
 from matplotlib.backends.backend_pdf import PdfPages
 import logging
