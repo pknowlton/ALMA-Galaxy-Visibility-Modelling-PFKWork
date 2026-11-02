@@ -25,6 +25,7 @@ os.environ["CASACORE_MEASURES_AUTO_UPDATE"] = "false"
 
 from matplotlib import pyplot as plt
 import matplotlib.ticker as ticker
+from matplotlib.patches import Polygon
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -67,6 +68,10 @@ font = {'family': 'serif',
         'weight': 'bold',
         'size': '14'}
 rc('font', **font)
+
+# Panel labels
+COLUMN_TITLES = ["Data", "Conv. Model", "Resid."]                               # 3-column overview figures
+BLOB_ROW_TITLES = ["Data", "Conv. Model", "Resid.", "Non-Conv. Model"]          # rows of the per-blob zoom figures
 
 def jybm_to_jysr(infile):
     r"""
@@ -470,6 +475,107 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
     plt.close(fig_tab)
     logging.info('Successfully saved final summary table page to PDF...')
 
+def prior_sector_outlines(pars_bf, fittype, n_arc=60):
+    """
+    Outlines (in RA/Dec degrees) of the region each blob's position prior allows.
+
+    A blob's position is described by polar coordinates around the disk centre:
+    a distance [arcsec] and an angle [deg, East of North, added to the disk position angle].
+    The prior on those two numbers is a range each, which traces out an annular sector:
+    between an inner and outer radius, and between a start and end angle.
+
+    The sectors use the same disk centre and position angle as the fitted blob positions
+    (see `dynest_radec` in radec_calc.py), so they line up with the fitted blobs.
+
+    Parameters
+    ----------
+    pars_bf : array_like
+        Best-fit parameters (supplies the disk position angle and centre offsets).
+    fittype : str
+        Model name registered in model_defs.py.
+    n_arc : int
+        Points used to draw each curved edge.
+
+    Returns
+    -------
+    outlines : list of numpy.ndarray
+        One (N, 2) array of (RA, Dec) degrees per blob (empty list for models without blobs).
+    """
+    spec = get_spec(fittype)
+    if spec.n_blobs == 0:
+        return []
+
+    ranges = pt_stream.PRIOR_RANGES[spec.name]
+    posangle, dRA, dDec = spec.geometry_params(pars_bf)
+    phase_center = SkyCoord(PHASE_CENTER_RA, PHASE_CENTER_DEC, frame='icrs')
+    center = phase_center.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
+
+    outlines = []
+    for k in range(spec.n_blobs):
+        i = spec.blob_index(k)
+        r_in, r_out = ranges[i + 2]            # Dist prior [arcsec]
+        ang_lo, ang_hi = ranges[i + 3]         # Angle prior [deg]
+        if ang_hi < ang_lo:
+            ang_hi += 360.0
+        sky_ang = np.linspace(ang_lo, ang_hi, n_arc) + posangle   # same convention as dynest_radec
+
+        outer = center.directional_offset_by(sky_ang * u.deg, r_out * u.arcsec)
+        inner = center.directional_offset_by(sky_ang[::-1] * u.deg, r_in * u.arcsec)
+        # Outer arc one way, inner arc back the other way; the two straight ends close the sector
+        ra = np.concatenate([outer.ra.deg, inner.ra.deg])
+        dec = np.concatenate([outer.dec.deg, inner.dec.deg])
+        outlines.append(np.column_stack([ra, dec]))
+    return outlines
+
+
+def render_prior_sector_page(pp, data_plot, model_plot, resid_plot, data_wcs, mod_wcs, hdr_data,
+                             outlines, vmin, vmax):
+    """
+    One-row figure (Data | Conv. Model | Resid.) with each blob's position prior drawn on
+    every panel as a dotted teal annular sector. Same layout and colour scale as the
+    first row of the overview figure.
+    """
+    fig = plt.figure(figsize=(24, 8.5))
+    gs = fig.add_gridspec(1, 4, width_ratios=[1, 1, 1, 0.04], wspace=0.08,
+                          left=0.08, right=0.91, bottom=0.17, top=0.86)
+
+    axes = [
+        fig.add_subplot(gs[0, 0], projection=data_wcs),
+        fig.add_subplot(gs[0, 1], projection=mod_wcs),
+        fig.add_subplot(gs[0, 2], projection=data_wcs),
+    ]
+    images = [data_plot, model_plot, resid_plot]
+
+    for ax, img, col_title in zip(axes, images, COLUMN_TITLES):
+        im = ax.imshow(img, vmin=vmin, vmax=vmax, origin='lower', cmap='inferno', rasterized=True)
+        ax.set_title(col_title, size=24)
+        ax.set_xlabel(r'', size=0)
+        ax.set_ylabel(r'', size=0)
+        safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
+
+        ax.set_autoscale_on(False)   # keep the image limits; do not zoom out to fit the sectors
+        for outline in outlines:
+            ax.add_patch(Polygon(outline, closed=True, fill=False, edgecolor='teal', linestyle=':',
+                                 linewidth=2.5, transform=ax.get_transform('world'), zorder=12))
+
+    # Hide y tick labels on columns 1 and 2
+    for ax in axes[1:]:
+        ax.coords[1].set_ticklabel_visible(False)
+
+    cax = fig.add_subplot(gs[0, 3])
+    cbar = fig.colorbar(im, cax=cax)
+    cbar.set_label(r'Specific Intensity (MJy/sr)', size=22)
+
+    fig.canvas.draw()
+    bbox = axes[0].get_position()
+    fig.text(0.025, (bbox.y0 + bbox.y1) / 2, r"Declination (J2000)", va='center', ha='center', rotation='vertical', size=22)
+    x_mid = (axes[0].get_position().x0 + axes[2].get_position().x1) / 2
+    fig.text(x_mid, 0.05, r"Right Ascension (J2000)", ha='center', va='center', size=22)
+
+    pp.savefig(fig)
+    plt.close(fig)
+
+
 def circular_mean_and_dispersion(samples, weights, period=360.0):
     """
     Computes circular mean and angular dispersion for periodic parameters.
@@ -497,12 +603,19 @@ def main():
         help="Folder holding the CASA measurement sets for the dataset that was fitted, "
              "e.g. 'casa_dir_freq' or 'casa_dir_freq_residiii'. The launch scripts derive this from the data table name."
     )
+    parser.add_argument(
+        "--output-dir", default="./output/",
+        help="Folder holding the run_dynesty.py checkpoint (read) and receiving the log, PDF and FITS products "
+             "(written). Created if missing. Default: ./output/"
+    )
     pargs = parser.parse_args()
 
     fittype = pargs.fittype
     casa_dir = pargs.casa_dir
+    output_dir = pargs.output_dir
+    os.makedirs(output_dir, exist_ok=True)
 
-    logfile = './output/' + fittype + '_dynesty.log'
+    logfile = os.path.join(output_dir, fittype + '_dynesty.log')
     logging.basicConfig(
         filename=logfile,
         filemode='a',
@@ -514,11 +627,12 @@ def main():
     logging.info("==========Visualization Output==========")
     logging.info('Fittype: %s', fittype)
     logging.info(f"CASA folder: {casa_dir}")
+    logging.info(f"Output folder: {output_dir}")
 
     # --------------------------------------------------------------------------
     # 1. Restore Dynesty Checkpoint & Coherent Best-Fit Parameter Selection
     # --------------------------------------------------------------------------
-    check_file = './output/' + fittype + '_checkpoint.save'
+    check_file = os.path.join(output_dir, fittype + '_checkpoint.save')
     sampler = DynamicNestedSampler.restore(check_file)
     res = sampler.results
 
@@ -562,7 +676,7 @@ def main():
         else:
             logging.info(f"  {labels[i]:<25} : {median:.4f} (+{p1:.4f} / -{m1:.4f}) {units[i]}")
 
-    pdf_plot = './output/' + fittype + '_plots.pdf'
+    pdf_plot = os.path.join(output_dir, fittype + '_plots.pdf')
     pp = PdfPages(pdf_plot)
     logging.info(f'Plot File: {pdf_plot}')
 
@@ -827,7 +941,7 @@ def main():
     # --- Combined 2x3 Comparison (Data, Model, Residuals with & without Overlays) ---
     fig = plt.figure(figsize=(24, 15))
     gs = fig.add_gridspec(2, 4, width_ratios=[1, 1, 1, 0.04], wspace=0.08, hspace=0.08,
-                           left=0.08, right=0.91, bottom=0.09, top=0.96)
+                           left=0.08, right=0.91, bottom=0.09, top=0.94)
 
     vmin_full = np.percentile(data_plot, 1)
     vmax_full = np.percentile(data_plot, 99.95)
@@ -843,7 +957,8 @@ def main():
     im02 = ax02.imshow(resid_plot, vmin=vmin_full, vmax=vmax_full, origin='lower', cmap='inferno', rasterized=True)
 
     row0_axes = [ax00, ax01, ax02]
-    for ax in row0_axes:
+    for ax, col_title in zip(row0_axes, COLUMN_TITLES):
+        ax.set_title(col_title, size=24)
         safe_add_beam(ax, header=hdr_data, frame=False, color='white', corner='bottom left')
 
     # Row 1: Data, Model, Dirty Residuals with Fitted Cluster & Ring Overlays
@@ -901,6 +1016,13 @@ def main():
     pp.savefig(fig)
     plt.close(fig)
 
+    # --- 1x3 page: same panels as row 0 above, with each blob's position prior overlaid ---
+    prior_outlines = prior_sector_outlines(pars_bf, fittype)
+    if prior_outlines:
+        render_prior_sector_page(pp, data_plot, ring_model, resid_plot, data_wcs, mod_wcs, hdr_data,
+                                 prior_outlines, vmin_full, vmax_full)
+        logging.info('Saved the blob position-prior overlay page...')
+
     # Save FITS products with full WCS information
     header_data = data_wcs.to_header()
     header_model = mod_wcs.to_header()
@@ -909,9 +1031,9 @@ def main():
     hdu_model = fits.PrimaryHDU(data=ring_model, header=header_model)
     hdu_resid = fits.PrimaryHDU(data=resid_plot, header=header_data)
 
-    hdu_data.writeto("./output/data_plot.fits", overwrite=True)
-    hdu_model.writeto("./output/ring_model.fits", overwrite=True)
-    hdu_resid.writeto("./output/resid_plot.fits", overwrite=True)
+    hdu_data.writeto(os.path.join(output_dir, "data_plot.fits"), overwrite=True)
+    hdu_model.writeto(os.path.join(output_dir, "ring_model.fits"), overwrite=True)
+    hdu_resid.writeto(os.path.join(output_dir, "resid_plot.fits"), overwrite=True)
 
     # --------------------------------------------------------------------------
     # 7. Zoomed-In Blob Analysis & 1D Brightness Profiles (Data, Model, Residuals)
@@ -982,8 +1104,9 @@ def main():
             # Relative Dec offset in arcseconds centered on Gaussian center b_dec
             dec_offsets_arcsec = (pixel_world_dec.dec.deg - b_dec) * 3600.0
 
-            # --- Column 0: 2D Zoomed Cutout ---
+            # --- Column 0: 2D Zoomed Cutout (row label as the panel title) ---
             ax_img = fig.add_subplot(gs[r, 0], projection=cut_wcs)
+            ax_img.set_title(BLOB_ROW_TITLES[r], size=18)
             im_zoom = ax_img.imshow(cut_data, vmin=vmin_zoom, vmax=vmax_zoom, origin='lower', cmap='inferno', rasterized=True)
             cbar_zoom = fig.colorbar(im_zoom, ax=ax_img, orientation='vertical', location='right', pad=0.04, shrink=0.85, aspect=15)
             cbars.append(cbar_zoom)
