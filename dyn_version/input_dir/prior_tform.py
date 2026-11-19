@@ -1,13 +1,9 @@
 r"""
-Prior Transformations for Dynesty Nested Sampling (Streamlined Edition)
-========================================================================
-In Bayesian nested sampling (Dynesty), sampling is performed on an N-dimensional
-unit hypercube where coordinates $u_i \in [0, 1]$ represent cumulative probability
-values. A prior transform function $\theta = F^{-1}(u)$ maps these coordinates
-to physical parameter values.
+Prior Transformations for Dynesty Nested Sampling
+==================================================
+Dynesty samples a unit hypercube, $u_i \in [0, 1]$. The prior transform
+$\theta = F^{-1}(u)$ maps those coordinates to physical parameter values.
 
-Key Architecture & User Ergonomics:
------------------------------------
 1. Prior Cards:
    The prior ranges for a run live in a "prior card", a small text file in
    dyn_version/prior_cards/ named after the run (<session_name>.pc). A card names
@@ -23,25 +19,20 @@ Key Architecture & User Ergonomics:
    between rows are optional. The <model_name>_legacy.pc cards hold the priors
    that used to be hardcoded in this file, and make good starting points.
 
-2. Intuitive Units for Easy Editing:
-   Cards are written in familiar physical units:
-     - Surface Brightness:  log10(Jy/sr)
-     - Gaussian Widths:     arcseconds (strictly positive, e.g. >= 0.05")
-     - Spatial Positions:   arcseconds (ring radius, centroid offsets, clump separations)
-     - Angular Coordinates: degrees (disk inclination, position angles, azimuthal angles)
+2. Card Units:
+     - Surface brightness:  log10(Jy/sr)
+     - Gaussian widths:     arcsec (strictly positive)
+     - Positions:           arcsec (ring radius, centroid offsets, blob distances)
+     - Angles:              degrees (inclination, position angles, azimuthal angles)
 
-3. Pre-Sampling Compilation (Zero Runtime Overhead):
-   Interferometric visibilities directly constrain total integrated flux F = V(0).
-   Sampling in (log10 Flux, log10 Sigma) eliminates the curved flux-size "funnel"
-   degeneracy that plagues (peak, sigma) parameterizations.
-
-   To avoid computing unit conversions repeatedly during sampling, the card's
-   ranges are converted ONCE, when the card is loaded, into compiled Dynesty ranges:
+3. Compiled Ranges:
+   Visibilities directly constrain total integrated flux F = V(0), so the sampler
+   works in (log10 Flux, log10 Sigma), which avoids the curved flux-size degeneracy
+   of a (peak, sigma) parameterization. The card ranges are converted once, when the
+   card is loaded:
      - Peak [log10(Jy/sr)] -> LogFlux [log10(Jy)]
      - Sigma [arcsec]      -> LogSigma [log10(arcsec)]
-   Dynesty calls `ptform(u)` millions of times; during sampling, only ultra-fast
-   linear interpolation and uniform-area disk transforms are executed. Zero conversion
-   overhead occurs during the nested sampling run!
+   so the transform itself only does linear maps and the uniform-area radius transform.
 
 4. One Generic Transform Builder:
    `make_ptform(fittype, card_path)` builds the prior transform from the parameter
@@ -62,7 +53,7 @@ ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
 
 
 # =============================================================================
-# CONVERSION HELPER FUNCTIONS (Executed ONCE Ahead of Sampling)
+# CONVERSION HELPER FUNCTIONS (run once, when the card is loaded)
 # =============================================================================
 
 def sigma_to_logsigma(sigma_arcsec):
@@ -79,7 +70,7 @@ def blob_peak_to_logflux(peak_jysr, sigma_bounds=None, sigma_arcsec=None):
     """
     Converts Gaussian blob peak surface brightness log10(Jy/sr) to total integrated flux log10(Jy).
 
-    Derivation (Audit P1 Item 1):
+    Derivation:
         F_blob = 2 * pi * I_0 * sigma_rad^2
         log10(F_blob) = peak + log10(2 * pi * sigma_rad^2)
     """
@@ -99,7 +90,7 @@ def ring_peak_to_logflux(peak_jysr, rad_bounds=None, sigma_bounds=None, inc_deg=
     """
     Converts inclined Gaussian ring peak brightness log10(Jy/sr) to total integrated flux log10(Jy).
 
-    Derivation (Audit P1 Item 1):
+    Derivation:
         F_ring = (2 * pi)^(3/2) * I_0 * R_rad * sigma_rad * cos(i)
         log10(F_ring) = peak + log10((2*pi)^(3/2) * R_rad * sigma_rad * cos(i))
     """
@@ -115,7 +106,6 @@ def uniform_area_radius(u, r_min, r_max):
     """
     Transforms uniform hypercube coordinate u in [0, 1] to radial distance r with uniform area density.
     p(r) dr proportional to r dr  =>  r = sqrt(r_min^2 + u * (r_max^2 - r_min^2))
-    Audit P1 Item 2: Non-singular uniform area Jacobian on disk.
     """
     return np.sqrt(r_min**2 + u * (r_max**2 - r_min**2))
 

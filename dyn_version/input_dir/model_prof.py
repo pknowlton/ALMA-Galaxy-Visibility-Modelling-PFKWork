@@ -1,54 +1,24 @@
 r"""
 2D Galaxy Brightness Profile Models and Galario Visibility Interface
 =====================================================================
-This module defines parametric 2D intensity distributions (e.g. tilted Gaussian
-rings with optional embedded clusters/blobs) representing the millimeter dust continuum
-emission in galaxy nuclear rings (specifically applied to NGC 3351 / M95).
-
-It interfaces with **Galario** (Gpu Accelerated Library for Analyzing Radio
-Interferometer Observations), which computes synthetic Fourier visibilities
-$V_{\text{mod}}(u, v)$ from simulated sky images and evaluates the goodness-of-fit
-$\chi^2$ directly in the visibility domain:
+Parametric 2D brightness models (a tilted Gaussian ring with optional Gaussian
+blobs) for the dust continuum of the NGC 3351 / M95 nuclear ring, and the Galario
+interface that turns a model image into visibilities and a chi^2:
     $\chi^2 = \sum_k w_k \left| V_{\text{obs}}(u_k, v_k) - V_{\text{mod}}(u_k, v_k) \right|^2$
 
-Coordinate System Conventions (Galario `origin='lower'`):
----------------------------------------------------------
-- The pixel array row index $iy \in [0, N_{xy}-1]$ corresponds to Declination offset $\Delta\delta$
-  (increasing with row index, North is upward, $y > 0$).
-- The pixel array column index $ix \in [0, N_{xy}-1]$ corresponds to Right Ascension offset $\Delta\alpha\cos\delta$
-  (descending with column index, East is leftward, $x > 0$ at $ix = 0$, $x < 0$ at $ix = N_{xy}-1$).
-- Physical coordinate origin is at pixel $[N_{xy}/2, N_{xy}/2]$.
-- Disk Position Angle (PA) is defined East of North.
-- All models use a consistent physical coordinate definition without hidden arbitrary rotation offsets.
+Coordinates (Galario `origin='lower'`):
+- Row index increases with Dec offset (North up).
+- Column index decreases with RA offset (East left: x > 0 at column 0).
+- The origin is pixel [N/2, N/2]. Position angles are East of North.
 
-Execution Modes & Angular Unit Handling (`version` argument):
--------------------------------------------------------------
-All spatial parameters—including ring Gaussian sigma ($\sigma_{\text{ring}}$), blob Gaussian sigmas
-($\sigma_{\text{blob}}$), ring radius ($R_{\text{ring}}$), centroid offsets
-($\Delta\alpha, \Delta\delta$), and blob radial distances ($d_{\text{blob}}$)—can be
-expressed in **radians** or **arcseconds**, depending on the execution mode:
+Units (`version` argument):
+- `'chi2'` / `'vis'`: the sampler supplies spatial parameters in arcsec;
+  `evaluate_model` converts them to radians, and `dxy` is in radians (Galario units).
+- `'plot'`: `dxy` is in arcsec (from the FITS header) and no conversion is done,
+  giving surface brightness maps in Jy/sr.
 
-1. `'chi2'` / `'vis'` (Fourier / Visibility domain):
-   - Galario operates internally in **radians**.
-   - Input parameters in `pars` are supplied in **arcseconds** by the sampler.
-   - `evaluate_model` automatically converts all spatial dimensions from arcseconds to **radians**
-     (via multiplication by `arcsec = np.pi / (180 * 3600)`).
-   - Pixel scale `dxy` is provided in **radians** (from `get_image_size`).
-   - The image builder and profile functions receive all spatial quantities
-     consistently in **radians**.
-
-2. `'plot'` (Sky Image / Visualization domain):
-   - Pixel scale `dxy` is passed directly in **arcseconds** (from FITS header `CDELT2 * 3600`).
-   - `evaluate_model` skips radian conversion, keeping all spatial parameters in **arcseconds**.
-   - The image builder constructs coordinate grids $(xx, yy)$ in **arcseconds** to directly
-     produce physical surface brightness maps in $\text{Jy}/\text{sr}$.
-
-Model Structure:
-----------------
-What each `fittype` contains (ring or no ring, number of blobs, where the disk
-geometry comes from, parameter labels) is defined once in `model_defs.py`.
-All fittypes are evaluated by the same generic code (`evaluate_model`), so there is
-no per-model wrapper function to keep in sync.
+What each fittype contains is defined in `model_defs.py`; every fittype is
+evaluated by the same generic `evaluate_model`.
 """
 
 import numpy as np
@@ -66,8 +36,7 @@ def get_grid(nxy, dxy):
     xx : 2D array of Right Ascension offsets (East positive, descending with column index; East is left).
     yy : 2D array of Declination offsets (North positive, ascending with row index; North is up).
 
-    Caches precomputed grids for each (nxy, dxy) pair to eliminate redundant memory allocations
-    and significantly reduce per-likelihood evaluation overhead.
+    Grids are cached per (nxy, dxy) so they are not rebuilt on every likelihood call.
     """
     key = (int(nxy), float(dxy))
     if key not in _GRID_CACHE:
@@ -198,7 +167,7 @@ def ring_flux_to_peak(log_flux_jy, sigma_rad, rad_rad, inc_rad):
     """
     Converts log10 integrated flux of an inclined Gaussian ring to peak surface brightness log10(Jy/sr).
 
-    Audit P1 Item 1:
+    Derivation:
         F_ring = (2*pi)**(3/2) * I_0 * R * sigma * cos(inc)
         where R and sigma are in radians, inc is in radians, F is in Jy, and I_0 is in Jy/sr.
     """
@@ -212,7 +181,7 @@ def blob_flux_to_peak(log_flux_jy, sigma_rad):
     """
     Converts log10 integrated flux of a circular 2D Gaussian blob to peak surface brightness log10(Jy/sr).
 
-    Audit P1 Item 1:
+    Derivation:
         F_blob = 2 * pi * I_0 * sigma**2
         where sigma is in radians, F is in Jy, and I_0 is in Jy/sr.
     """
@@ -417,7 +386,7 @@ def model_prof(pars, args, vis_data, version, fittype):
 def model_addon(fittype):
     """
     Returns parameter metadata (labels, physical units, dimensionality) for a given model.
-    Reparameterized according to Audit P1 Item 1: log integrated flux + log size.
+    Fluxes and sizes are sampled as log integrated flux and log sigma.
     """
     spec = get_spec(fittype)
     label, unit = spec.labels_units()

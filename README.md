@@ -1,26 +1,26 @@
 # ALMA Visibility Modelling
 
-> **Bayesian visibility modeling of interferometric radio observations using Dynesty dynamic nested sampling and Galario.**
-> 
+> **Bayesian modelling of ALMA interferometric visibilities with Dynesty dynamic nested sampling and Galario.**
+>
 > *Maintained by Peter Knowlton (University of Victoria)*  
 > *Forked and evolved from Emily Carver's ALMA Visibility Modelling repository.*
 
 ---
 
-## Table of Contents
+## Quick Start
 
-- [Scientific Overview](#scientific-overview)
-  - [Why Model in the Visibility (Fourier) Domain?](#why-model-in-the-visibility-fourier-domain)
-  - [Why Dynamic Nested Sampling (`dynesty`)?](#why-dynamic-nested-sampling-dynesty)
-- [Repository History & Context](#repository-history--context)
-- [Pipeline Architecture (`dyn_version`)](#pipeline-architecture-dyn_version)
-  - [Workflow Overview](#workflow-overview)
-  - [File & Directory Structure](#file--directory-structure)
-- [Software Prerequisites & Environments](#software-prerequisites--environments)
-- [How to Run](#how-to-run)
-  - [1. Remote Headless Execution (CANFAR Skaha)](#1-remote-headless-execution-canfar-skaha)
-- [Output Data Products & Diagnostics](#output-data-products--diagnostics)
-- [AI-Assisted Development](#ai-assisted-development)
+1. Write a prior card for the run: copy a legacy card and edit the ranges.
+   ```bash
+   cp dyn_version/prior_cards/twod_gaussring_legacy.pc dyn_version/prior_cards/ngc3351-gaussring-01.pc
+   ```
+2. Launch the run on CANFAR:
+   ```bash
+   cd dyn_version
+   python launch_headless_scratch.py ngc3351-gaussring-01 twod_gaussring M95_C5+C2_cont93_uvtable_freq.txt
+   ```
+3. Results appear in `/arc/projects/uvdisk_fit/results/dyn_results/ngc3351-gaussring-01/`.
+
+Details are in [How to Run](#how-to-run).
 
 ---
 
@@ -28,16 +28,16 @@
 
 ### Why Model in the Visibility (Fourier) Domain?
 
-Radio and millimeter interferometers like the **Atacama Large Millimeter/submillimeter Array (ALMA)** do not directly capture sky images. Instead, antenna pairs cross-correlate incoming electromagnetic wavefronts to sample spatial Fourier frequencies $(u, v)$ of the true sky brightness distribution. These Fourier measurements are called **complex visibilities**:
+Interferometers like **ALMA** do not record sky images directly. Each antenna pair samples a spatial Fourier frequency $(u, v)$ of the sky brightness, giving **complex visibilities**:
 
 $$V(u, v) = \iint I(x, y) \, e^{-2\pi i (ux + vy)} \, dx \, dy$$
 
-Traditional methods reconstruct sky images through Fourier inversion and deconvolution algorithms (such as `CLEAN`). However, incomplete $(u, v)$ coverage, non-linear deconvolution steps, and spatially correlated noise can introduce systematic artifacts and biased parameter measurements.
+Images are normally reconstructed by Fourier inversion and deconvolution (`CLEAN`), but incomplete $(u, v)$ coverage, the non-linear deconvolution and correlated image noise can bias parameters measured from the image.
 
-**Visibility modeling** bypasses image deconvolution altogether:
-1. Proposes a parametric 2D physical brightness model $I(x, y; \theta)$.
-2. Computes the model Fourier transform $V_{\text{mod}}(u, v; \theta)$ using **[Galario](https://github.com/mtazzari/galario)** (GPU/CPU-accelerated library).
-3. Evaluates the goodness-of-fit $\chi^2$ directly against the calibrated visibility table $(u, v, \text{Re}, \text{Im}, w)$:
+**Visibility modelling** skips the image:
+1. Propose a parametric 2D brightness model $I(x, y; \theta)$.
+2. Compute its visibilities $V_{\text{mod}}(u, v; \theta)$ with **[Galario](https://github.com/mtazzari/galario)**.
+3. Compare them directly with the calibrated visibility table $(u, v, \text{Re}, \text{Im}, w)$:
 
 $$\chi^2(\theta) = \sum_k w_k \left| V_{\text{obs}}(u_k, v_k) - V_{\text{mod}}(u_k, v_k; \theta) \right|^2$$
 
@@ -45,130 +45,147 @@ $$\ln \mathcal{L}(\theta) = -\frac{1}{2} \chi^2(\theta)$$
 
 ### Why Dynamic Nested Sampling (`dynesty`)?
 
-Previous versions of this pipeline relied on Markov Chain Monte Carlo (MCMC) via `emcee`. This version uses **Dynamic Nested Sampling** with **[dynesty](https://dynesty.readthedocs.io/)**:
-- **Bayesian Evidence ($\mathcal{Z}$)**: Calculates the marginal likelihood $\mathcal{Z} = \int \mathcal{L}(\theta)\pi(\theta)d\theta$, enabling quantitative Bayesian model selection (e.g. evaluating whether a 19-parameter 3-blob model is statistically justified over a 7-parameter smooth ring).
-- **Multi-modal Posterior Exploration**: Efficiently navigates complex, degenerate, or multi-peaked parameter landscapes without getting trapped in local minima.
-- **Dynamic Live Point Allocation**: Dynamically allocates live points to regions of high posterior mass or complex topology, ensuring high-fidelity credible intervals ($\text{median} \pm 1\sigma$).
+Earlier versions of this pipeline used MCMC (`emcee`). This version uses dynamic nested sampling with **[dynesty](https://dynesty.readthedocs.io/)**, which:
+- **Computes the Bayesian evidence** $\mathcal{Z} = \int \mathcal{L}(\theta)\pi(\theta)d\theta$, so models can be compared (e.g. whether a 19-parameter 3-blob model is justified over a 7-parameter smooth ring).
+- **Handles multi-modal posteriors** better than a single MCMC ensemble, since it explores the whole prior volume rather than starting from one region.
+- **Adds live points where the posterior mass is**, to refine the posterior estimates.
 
 ---
 
-## Repository History & Context
+## Repository History
 
-- **Emily Carver's Original Repository**: Provided the initial groundwork for ALMA visibility modeling using MCMC sampling.
-- **MCMC / earlier versions**: The historical `emcee` MCMC and ADVI implementations are no longer in this branch; they remain in git history on the `msc-v1-archive` and `msc-v2` branches.
-- **Current Dynamic Nested Sampling Version (`dyn_version/`)**: Redesigned to utilize `dynesty` nested sampling, multi-core multiprocessing pools, node-local scratch staging, resource profiling, and integrated CASA residual imaging.
+- **Emily Carver's original repository**: the initial MCMC-based ALMA visibility modelling.
+- **MCMC / earlier versions**: the `emcee` MCMC and ADVI implementations are no longer in this branch; they remain in git history on the `msc-v1-archive` and `msc-v2` branches.
+- **`dyn_version/`** (current): `dynesty` nested sampling with a multiprocessing pool, node-local scratch staging, resource profiling and CASA residual imaging.
 
 ---
 
 ## Pipeline Architecture (`dyn_version`)
 
-The `dyn_version/` directory contains an end-to-end distributed workflow designed for high-performance batch execution on the **CANFAR** (Canadian Advanced Network for Astronomical Research) cloud infrastructurs.
+`dyn_version/` runs fits as batch jobs on **CANFAR** (Canadian Advanced Network for Astronomical Research).
 
-### Workflow Overview
+### Workflow
 
 ```mermaid
 flowchart TD
-    A["launch_headless_scratch.py<br>(CANFAR Skaha Session)"] --> B["launch_fittings_scratch_bshlog_pfk.sh<br>(Pre-allocates scratch & logs stdout/stderr)"]
-    B --> C["launch_fittings_scratch_psrec_pfk.sh<br>(psrecord CPU & Memory Profiling)"]
-    C --> D["launch_fittings_scratch_pfk.sh<br>(Core Execution & Scratch Staging)"]
-    D --> E["input_dir/run_dynesty.py<br>(Dynesty Dynamic Nested Sampling + Galario)"]
+    A["launch_headless_scratch.py<br>(CANFAR headless session)"] --> B["launch_fittings_scratch_bshlog_pfk.sh<br>(scratch folder & stdout/stderr log)"]
+    B --> C["launch_fittings_scratch_psrec_pfk.sh<br>(psrecord CPU & memory profiling)"]
+    C --> D["launch_fittings_scratch_pfk.sh<br>(scratch staging & execution)"]
+    D --> E["input_dir/run_dynesty.py<br>(nested sampling)"]
     E --> F["output/<session_name>_checkpoint.save<br>& output/<session_name>_dynesty.log"]
-    F --> G["input_dir/visualize_dynesty.py<br>(Residuals, CASA tclean & Multi-panel Plots)"]
+    F --> G["input_dir/visualize_dynesty.py<br>(residuals, CASA tclean, plots)"]
     G --> H["output/<session_name>_plots.pdf<br>& output/carta_files/"]
-    H --> I["Cleanup Exit Trap<br>(Syncs all products back to persistent OUT_DIR)"]
+    H --> I["Exit trap<br>(copies all products to OUT_DIR)"]
 ```
 
-### File & Directory Structure
+### Files
 
 ```
 dyn_version/
-├── launch_headless_scratch.py              # Python launcher for CANFAR Skaha batch sessions
-├── launch_fittings_scratch_bshlog_pfk.sh   # Logging wrapper: captures live stdout/stderr to bashlog.txt
-├── launch_fittings_scratch_psrec_pfk.sh    # Profiler wrapper: tracks CPU/RAM usage with psrecord
-├── launch_fittings_scratch_pfk.sh          # Core shell runner: scratch staging, Conda activation & cleanup
-├── prior_cards/                            # Prior card per run (<session_name>.pc); <model_name>_legacy.pc are starting points
-└── input_dir/                              # Code and model definitions executed on compute node
-    ├── run_dynesty.py                  # Main Dynesty sampling driver with multiprocessing Pool
-    ├── model_defs.py                       # Model registry: defines every fittype (ring, blobs, geometry, labels) in one place
-    ├── model_prof.py                       # Generic 2D brightness model builder & Galario interface
-    ├── prior_tform.py                      # Prior card reader and unit hypercube transformations for Dynesty
-    ├── radec_calc.py                       # Celestial coordinate conversions (Sun et al. clusters & model blobs)
-    └── visualize_dynesty.py                # Post-fit imaging, CASA tclean, and PDF figure generation
+├── launch_headless_scratch.py              # Launches a CANFAR headless session
+├── launch_fittings_scratch_bshlog_pfk.sh   # Logging wrapper: captures stdout/stderr to bashlog.txt
+├── launch_fittings_scratch_psrec_pfk.sh    # Profiling wrapper: CPU/RAM usage with psrecord
+├── launch_fittings_scratch_pfk.sh          # Core runner: scratch staging, Conda environment, cleanup
+├── prior_cards/                            # One prior card per run (<session_name>.pc); <model_name>_legacy.pc are starting points
+└── input_dir/                              # Code run on the compute node
+    ├── run_dynesty.py                      # Dynesty sampling driver (multiprocessing Pool)
+    ├── model_defs.py                       # Model registry: every fittype's ring, blobs, geometry and labels
+    ├── model_prof.py                       # 2D brightness models and the Galario interface
+    ├── prior_tform.py                      # Prior card reader and prior transforms
+    ├── radec_calc.py                       # Sky coordinates of fitted components, model WCS
+    └── visualize_dynesty.py                # Post-fit residual imaging (CASA tclean) and PDF figures
 ```
 
-## Software Prerequisites & Environments
+## Software Environments
 
-The pipeline uses two Python environments to balance dependency constraints (e.g. CANFAR `skaha` requires Python $\ge 3.9$, while certain legacy versions of `galario` and `CASA` tools require Python $\le 3.8$):
+Two Python environments are needed, because CANFAR's `canfar` package needs Python $\ge 3.9$ while the `galario` and CASA builds used here need Python $\le 3.8$:
 
 ### 1. Launcher Environment (Python $\ge 3.9$)
-Used by `launch_headless_scratch.py` on client machines or CANFAR login nodes:
-- `canfar` / `skaha`
-- `numpy`
+Used by `launch_headless_scratch.py`:
+- `canfar`
 
-### 2. Execution Environment (`pk_env_38` / Python $\le 3.8$)
-Used inside the compute containers / batch jobs:
+### 2. Execution Environment (`pk_env_38`, Python $\le 3.8$)
+Used on the compute node:
 - **`dynesty`** ($\ge 2.0$)
-- **`galario`** (GPU or multi-core CPU build)
-- **`casatools` & `casatasks`** (Modular CASA for `tclean`, `impbcor`, `table`)
-- **`astropy`** (FITS handling, WCS coordinates, Cutout2D)
-- **`matplotlib` & `corner`** (Plotting and visualization)
-- **`psrecord` & `psutil`** (System resource monitoring)
-- **`scipy` & `numpy`**
+- **`galario`**
+- **`casatools` & `casatasks`** (`tclean`, `impbcor`, `table`)
+- **`astropy`**, **`matplotlib`**, **`corner`**, **`uvplot`**, **`pandas`**
+- **`psrecord`** & **`psutil`**
+- **`scipy`** & **`numpy`**
 
 ---
 
 ## How to Run
 
-### 1. Remote Headless Execution (CANFAR Skaha)
+### Prior Cards
 
-Each run needs a prior card, `dyn_version/prior_cards/<session_name>.pc`, whose first line is `model: <fittype>` followed by one `[low, high]` row per parameter (copy a `<model_name>_legacy.pc` card to start). Check a card with `python prior_tform.py ../prior_cards/<session_name>.pc` from `input_dir/`.
+Each run reads its priors from `dyn_version/prior_cards/<session_name>.pc`. The first line names the model, followed by one `[low, high]` row per parameter, in parameter order:
 
-To spawn a remote batch session on CANFAR:
+```
+model: twod_gaussring
+[6.417, 9.417], # 0: Ring Peak brightness [log10(Jy/sr)]
+[0.05, 4.0],    # 1: Ring Gaussian width sigma [arcsec]
+...
+```
+
+Everything after `#` is a comment. Copy a `<model_name>_legacy.pc` card to start. To check a card before launching, run this from `input_dir/`:
 
 ```bash
-# Syntax: python launch_headless_scratch.py <session_name> <fittype> <data_file>
+python prior_tform.py ../prior_cards/<session_name>.pc
+```
+
+### Launching on CANFAR
+
+```bash
+# python launch_headless_scratch.py <session_name> <fittype> <data_file>
 python launch_headless_scratch.py ngc3351-gaussring-01 twod_gaussring M95_C5+C2_cont93_uvtable_freq.txt
 python launch_headless_scratch.py ngc3351-resid-01 resid_gauss3blob M95_C5+C2_cont93_uvtable_freq_residiii.txt
 ```
 
-`<data>` is a file name inside the data folder set at the top of `launch_headless_scratch.py` (or a full path). The CASA folder used for the residual images is chosen automatically from the data file name (everything after `uvtable_`):
+- `<data_file>` is a file name inside the data folder set at the top of `launch_headless_scratch.py` (or a full path).
+- The launcher stops if the prior card is missing or names a different model.
+- The CASA folder used for the residual images is chosen from the data file name (everything after `uvtable_`):
 
 | Data table | CASA folder (inside `input_dir/`) |
 |---|---|
 | `M95_C5+C2_cont93_uvtable_freq.txt` | `casa_dir_freq` |
 | `M95_C5+C2_cont93_uvtable_freq_residiii.txt` | `casa_dir_freq_residiii` |
 
-This launches a headless container with 16 CPU cores (`cores` in the launcher and `NCORES` in `run_dynesty.py`; keep them equal), executes the full pipeline in node-local scratch space, and outputs results to `/arc/projects/uvdisk_fit/dynest_product_dir/<session_name>/`.
+The session runs on 16 CPU cores (`cores` in the launcher and `NCORES` in `run_dynesty.py`; keep them equal) and writes results to `/arc/projects/uvdisk_fit/results/dyn_results/<session_name>/`.
 
-A run resumes from its checkpoint automatically if one exists; to start over, run `run_dynesty.py` with `--no-resume`.
+A run resumes from its checkpoint if one exists; to start over, run `run_dynesty.py` with `--no-resume`.
 
-### Supported Model Profiles (`fittype`)
+### Models (`fittype`)
 
-The pipeline implements multiple parametric models, each defined in `dyn_version/input_dir/model_defs.py` (the table below is partly out of date: the `2peak` models were removed, and `twod_gaussring_nonuni`, `twod_gauss2blob`, `twod_gauss3blob_nonuni`, `resid_gauss1blob`, `resid_gauss3blob` and `simgauss` were added):
+All models are defined in `dyn_version/input_dir/model_defs.py`. Ring models share the 7 ring parameters (log flux, log width, radius, inclination, PA, RA and Dec offsets); each blob adds 4 (log flux, log width, distance and angle from the ring centre).
 
-| `fittype` | Parameters ($N_{\text{dim}}$) | Description |
+| `fittype` | Parameters | Description |
 | :--- | :---: | :--- |
-| `twod_gaussring` | 7 | Tilted, inclined elliptical Gaussian ring (Peak, Width, Radius, Inc, PA, $\Delta\alpha$, $\Delta\delta$). |
-| `twod_gauss1blob` | 11 | Gaussian ring superimposed with 1 localized Gaussian emission clump (polar distance and angle). |
-| `twod_gauss1blob_2peak` | 13 | Gaussian ring with 1 clump modeled as two concentric Gaussian components (core + envelope). |
-| `twod_gauss1blob_2peak_dp` | 15 | **"Double Pendulum" Model**: Gaussian ring with a clump consisting of two distinct peaks. Peak 1 is parameterized relative to the ring center, while Peak 2 is parameterized relative to Peak 1 (with separation constrained to $\le 2''$). |
-| `twod_gauss3blob` | 19 | Gaussian ring superimposed with 3 distinct compact clumps. |
+| `twod_gaussring` | 7 | Inclined Gaussian ring. |
+| `twod_gaussring_nonuni` | 8 | Gaussian ring with an m=2 azimuthal brightness variation (adds its offset angle). |
+| `twod_gauss1blob` | 11 | Gaussian ring + 1 Gaussian blob. |
+| `twod_gauss2blob` | 15 | Gaussian ring + 2 Gaussian blobs. |
+| `twod_gauss3blob` | 19 | Gaussian ring + 3 Gaussian blobs. |
+| `twod_gauss3blob_nonuni` | 20 | Non-uniform ring + 3 Gaussian blobs. |
+| `resid_gauss1blob` | 4 | 1 blob fitted to a residual map; disk PA and centre fixed to the `twod_gauss3blob` best fit. |
+| `resid_gauss3blob` | 12 | 3 blobs fitted to a residual map; disk PA and centre fixed as above. |
+| `simgauss` | 7 | Single Gaussian blob with free PA and centre, for tests on simulated data. |
 
 ---
 
-## Output Data Products & Diagnostics
+## Output Products
 
-Upon completion, the output directory contains:
+The run's output folder contains:
 
-| Output Product | Description |
+| Output | Description |
 | :--- | :--- |
-| `<session_name>_checkpoint.save` | Serialized Dynesty sampler state containing all nested samples, weights, and evidence estimates. |
-| `<session_name>_dynesty.log` | Text log containing live sampling progression, Bayesian log-evidence $\ln \mathcal{Z} \pm \sigma$, sampling efficiency, and parameter quantiles (16th, 50th, 84th percentiles). |
-| `<session_name>_plots.pdf` | Multipage PDF report containing:<br>• **Page 1**: Dynesty summary run plot (live points, evidence convergence, sample weights).<br>• **Page 2**: Posterior corner plot with 1D parameter marginals and 2D covariance contours.<br>• **Page 3**: 3-panel comparison (Observed CLEAN image, Model sky intensity, CLEAN residual visibilities) in $\text{MJy}/\text{sr}$.<br>• **Page 4**: 3-panel comparison with model contour overlays.<br>• **Page 5**: 3-panel comparison with cluster positions from Sun et al. (2024).<br>• **Pages 6+**: High-resolution $2'' \times 2''$ zoom cutouts and 1D RA/Dec brightness profile slices for each modeled clump / peak. |
-| `carta_files/` (`data_plot.fits`, `ring_model.fits`, `resid_plot.fits`) | 2D FITS images with full WCS coordinates containing observed data, best-fit model, and residual maps in $\text{MJy}/\text{sr}$ for inspection in CARTA/DS9. |
+| `<session_name>_checkpoint.save` | Dynesty sampler state (samples, weights, evidence). |
+| `<session_name>_dynesty.log` | Run log: prior ranges, log-evidence $\ln \mathcal{Z} \pm \sigma$, sampling efficiency, best-fit values and 16th/50th/84th percentiles. |
+| `<session_name>_plots.pdf` | Dynesty run plot; corner plot; binned visibilities of data vs model; data, model and residual images (plain and with the ring ridge and fitted positions overlaid); blob position priors drawn on the images (blob models); a zoom page per fitted component with 1D RA/Dec profiles; and a summary table of priors and posterior estimates. |
+| `carta_files/` | `data_plot.fits`, `ring_model.fits`, `resid_plot.fits`: data, beam-convolved model and residual images (MJy/sr, with WCS) for CARTA or DS9. |
 | `<session_name>.pc` | Copy of the prior card used for the run. |
-| `<name>_psrecord.png` & `.txt` | Resource monitoring profile tracking CPU % and memory (MB) utilization over the duration of the run. |
-| `bashlog.txt` | Complete stdout and stderr log captured during the execution of all shell and Python stages. |
+| `<session_name>_psrecord.png` & `.txt` | CPU and memory use over the run. |
+| `bashlog.txt` | Full stdout and stderr of the run. |
 
 ---
 
