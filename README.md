@@ -72,9 +72,9 @@ flowchart TD
     B --> C["launch_fittings_scratch_psrec_pfk.sh<br>(psrecord CPU & memory profiling)"]
     C --> D["launch_fittings_scratch_pfk.sh<br>(scratch staging & execution)"]
     D --> E["input_dir/run_dynesty.py<br>(nested sampling)"]
-    E --> F["output/<session_name>_checkpoint.save<br>& output/<session_name>_dynesty.log"]
+    E --> F["output/<session-name>_checkpoint.save<br>& output/<session-name>_dynesty.log"]
     F --> G["input_dir/visualize_dynesty.py<br>(residuals, CASA tclean, plots)"]
-    G --> H["output/<session_name>_plots.pdf<br>& output/carta_files/"]
+    G --> H["output/<session-name>_plots.pdf<br>& output/carta_files/"]
     H --> I["Exit trap<br>(copies all products to OUT_DIR)"]
 ```
 
@@ -86,7 +86,7 @@ dyn_version/
 ├── launch_fittings_scratch_bshlog_pfk.sh   # Logging wrapper: captures stdout/stderr to bashlog.txt
 ├── launch_fittings_scratch_psrec_pfk.sh    # Profiling wrapper: CPU/RAM usage with psrecord
 ├── launch_fittings_scratch_pfk.sh          # Core runner: scratch staging, Conda environment, cleanup
-├── prior_cards/                            # One prior card per run (<session_name>.pc); <model_name>_legacy.pc are starting points
+├── prior_cards/                            # One prior card per run (<session-name>.pc); <model_name>_legacy.pc are starting points
 └── input_dir/                              # Code run on the compute node
     ├── run_dynesty.py                      # Dynesty sampling driver (multiprocessing Pool)
     ├── model_defs.py                       # Model registry: every fittype's ring, blobs, geometry and labels
@@ -119,7 +119,7 @@ Used on the compute node:
 
 ### Prior Cards
 
-Each run reads its priors from `dyn_version/prior_cards/<session_name>.pc`. The first line names the model, followed by one `[low, high]` row per parameter, in parameter order:
+Each run reads its priors from `dyn_version/prior_cards/<session-name>.pc`. The first line names the model, followed by one `[low, high]` row per parameter, in parameter order:
 
 ```
 model: twod_gaussring
@@ -131,13 +131,13 @@ model: twod_gaussring
 Everything after `#` is a comment. Copy a `<model_name>_legacy.pc` card to start. To check a card before launching, run this from `input_dir/`:
 
 ```bash
-python prior_tform.py ../prior_cards/<session_name>.pc
+python prior_tform.py ../prior_cards/<session-name>.pc
 ```
 
 ### Launching on CANFAR
 
 ```bash
-# python launch_headless_scratch.py <session_name> <fittype> <data_file>
+# python launch_headless_scratch.py <session-name> <fittype> <data_file>
 python launch_headless_scratch.py ngc3351-gaussring-01 twod_gaussring M95_C5+C2_cont93_uvtable_freq.txt
 python launch_headless_scratch.py ngc3351-resid-01 resid_gauss3blob M95_C5+C2_cont93_uvtable_freq_residiii.txt
 ```
@@ -151,7 +151,7 @@ python launch_headless_scratch.py ngc3351-resid-01 resid_gauss3blob M95_C5+C2_co
 | `M95_C5+C2_cont93_uvtable_freq.txt` | `casa_dir_freq` |
 | `M95_C5+C2_cont93_uvtable_freq_residiii.txt` | `casa_dir_freq_residiii` |
 
-The session runs on 16 CPU cores (`cores` in the launcher and `NCORES` in `run_dynesty.py`; keep them equal) and writes results to `/arc/projects/uvdisk_fit/results/dyn_results/<session_name>/`.
+The session runs on 16 CPU cores (`cores` in the launcher and `NCORES` in `run_dynesty.py`; keep them equal) and writes results to `/arc/projects/uvdisk_fit/results/dyn_results/<session-name>/`.
 
 A run resumes from its checkpoint if one exists; to start over, run `run_dynesty.py` with `--no-resume`.
 
@@ -179,12 +179,12 @@ The run's output folder contains:
 
 | Output | Description |
 | :--- | :--- |
-| `<session_name>_checkpoint.save` | Dynesty sampler state (samples, weights, evidence). |
-| `<session_name>_dynesty.log` | Run log: prior ranges, log-evidence $\ln \mathcal{Z} \pm \sigma$, sampling efficiency, best-fit values and 16th/50th/84th percentiles. |
-| `<session_name>_plots.pdf` | Dynesty run plot; corner plot; binned visibilities of data vs model; data, model and residual images (plain and with the ring ridge and fitted positions overlaid); blob position priors drawn on the images (blob models); a zoom page per fitted component with 1D RA/Dec profiles; and a summary table of priors and posterior estimates. |
+| `<session-name>_checkpoint.save` | Dynesty sampler state (samples, weights, evidence). |
+| `<session-name>_dynesty.log` | Run log: prior ranges, log-evidence $\ln \mathcal{Z} \pm \sigma$, sampling efficiency, best-fit values and 16th/50th/84th percentiles. |
+| `<session-name>_plots.pdf` | Dynesty run plot; corner plot; binned visibilities of data vs model; data, model and residual images (plain and with the ring ridge and fitted positions overlaid); blob position priors drawn on the images (blob models); a zoom page per fitted component with 1D RA/Dec profiles; and a summary table of priors and posterior estimates. |
 | `carta_files/` | `data_plot.fits`, `ring_model.fits`, `resid_plot.fits`: data, beam-convolved model and residual images (MJy/sr, with WCS) for CARTA or DS9. |
-| `<session_name>.pc` | Copy of the prior card used for the run. |
-| `<session_name>_psrecord.png` & `.txt` | CPU and memory use over the run. |
+| `<session-name>.pc` | Copy of the prior card used for the run. |
+| `<session-name>_psrecord.png` & `.txt` | CPU and memory use over the run. |
 | `bashlog.txt` | Full stdout and stderr of the run. |
 
 ---
