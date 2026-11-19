@@ -8,14 +8,17 @@
 #              and automatically syncs all results back to persistent storage.
 #
 # Usage:
-#   ./launch_fittings_scratch_pfk.sh <IN_DIR> <OUT_DIR> <DATA_PATH> <FITTYPE>
+#   ./launch_fittings_scratch_pfk.sh <IN_DIR> <OUT_DIR> <NAME> <DATA_PATH> <FITTYPE> <PRIOR_CARD>
 #
 # Arguments:
-#   $1 - IN_DIR:    Path to directory containing input Python scripts and modules.
-#   $2 - OUT_DIR:   Persistent destination directory for output logs, models, and plots.
-#   $3 - DATA_PATH: Absolute path to the calibrated UV visibility table (ASCII format).
-#   $4 - FITTYPE:   Model identifier (see input_dir/model_defs.py for the full list,
-#                   e.g. 'twod_gaussring', 'twod_gauss3blob_nonuni', 'resid_gauss3blob').
+#   $1 - IN_DIR:     Path to directory containing input Python scripts and modules.
+#   $2 - OUT_DIR:    Persistent destination directory for output logs, models, and plots.
+#   $3 - NAME:       Run name; the checkpoint, log and PDF are named <NAME>_*.
+#   $4 - DATA_PATH:  Absolute path to the calibrated UV visibility table (ASCII format).
+#   $5 - FITTYPE:    Model identifier (see input_dir/model_defs.py for the full list,
+#                    e.g. 'twod_gaussring', 'twod_gauss3blob_nonuni', 'resid_gauss3blob').
+#   $6 - PRIOR_CARD: Absolute path to the run's prior card (prior_cards/<NAME>.pc). It is
+#                    staged as prior_card.pc and a copy is kept in OUT_DIR.
 #
 # CASA folder:
 #   The folder of CASA products used by the visualiser is derived from the data
@@ -37,10 +40,14 @@ IN_DIR=$1
 echo "Input Directory:  $IN_DIR"
 OUT_DIR=$2
 echo "Output Directory: $OUT_DIR"
-DATA_PATH=$3
+NAME=$3
+echo "Run Name:         $NAME"
+DATA_PATH=$4
 echo "Data Path:        $DATA_PATH"
-FITTYPE=$4
+FITTYPE=$5
 echo "Fit Type:         $FITTYPE"
+PRIOR_CARD=$6
+echo "Prior Card:       $PRIOR_CARD"
 
 # CASA folder for this data table: 'casa_dir_' + whatever follows 'uvtable_' in the file name
 #   M95_C5+C2_cont93_uvtable_freq_residiii.txt -> casa_dir_freq_residiii
@@ -84,8 +91,15 @@ trap cleanup EXIT
 # Create output folder within scratch staging area and copy visibility data and code.
 mkdir -p "${STAGING_DIR}/output"
 
+if [ ! -f "${PRIOR_CARD}" ]; then
+    echo "ERROR: prior card not found: ${PRIOR_CARD}"
+    exit 1
+fi
+
 cp "${DATA_PATH}" "${STAGING_DIR}/uvtable.txt"
 cp -r "${IN_DIR}/"* "${STAGING_DIR}/"
+cp "${PRIOR_CARD}" "${STAGING_DIR}/prior_card.pc"
+cp "${PRIOR_CARD}" "${STAGING_DIR}/output/"
 
 # ------------------------------------------------------------------------------
 # 4. Execution: Dynesty Nested Sampling & Visualization
@@ -101,12 +115,12 @@ ls "${CASA_DIR}"
 echo "Starting run at $(date)"
 
 # Step 4a: Run dynamic nested sampling with Dynesty to fit the model to UV visibilities
-conda run -n pk_env_38 python run_dynesty.py "${FITTYPE}"
+conda run -n pk_env_38 python run_dynesty.py "${FITTYPE}" --run-name "${NAME}" --prior-card prior_card.pc
 RUN_CODE=$?
 
 # Step 4b: Run post-processing to generate diagnostic plots, CASA CLEAN images, and PDFs
 # (still runs if 4a failed, so a partial checkpoint can be inspected)
-conda run -n pk_env_38 python visualize_dynesty.py "${FITTYPE}" --casa-dir "${CASA_DIR}"
+conda run -n pk_env_38 python visualize_dynesty.py "${FITTYPE}" --run-name "${NAME}" --casa-dir "${CASA_DIR}" --prior-card prior_card.pc
 VIS_CODE=$?
 
 # Report the first failure (previously only the visualiser's status was reported)

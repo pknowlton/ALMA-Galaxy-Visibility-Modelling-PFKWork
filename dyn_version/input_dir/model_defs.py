@@ -17,7 +17,7 @@ Every fittype is built from the same few pieces:
 
 `model_prof.py`, `prior_tform.py`, `run_dynesty.py`, `visualize_dynesty.py`
 and `radec_calc.py` all read this file, so adding or changing a model means
-editing it here once (plus the prior ranges in `prior_tform.py`).
+editing it here once (plus writing a prior card for it in dyn_version/prior_cards/).
 
 This module has no heavy imports (no numpy, no galario), so it is safe to
 import anywhere.
@@ -167,8 +167,8 @@ class ModelSpec:
 
 
 # -----------------------------------------------------------------------------
-# The registry. To add a model, add one line here (and its prior ranges in
-# prior_tform.py).
+# The registry. To add a model, add one line here (and write a prior card for
+# it in dyn_version/prior_cards/).
 # -----------------------------------------------------------------------------
 MODEL_SPECS = {spec.name: spec for spec in [
     ModelSpec('twod_gaussring',          ring='uniform'),
@@ -182,18 +182,11 @@ MODEL_SPECS = {spec.name: spec for spec in [
     ModelSpec('simgauss',                n_blobs=1, geometry='free'),
 ]}
 
-# Alternate spellings that are accepted on the command line.
-ALIASES = {
-    'twod_gaussring_nonuni_3blob': 'twod_gauss3blob_nonuni',
-    'twod_simgauss': 'simgauss',
-}
-
 
 def get_spec(fittype):
-    """Looks up the ModelSpec for a fittype name (aliases allowed)."""
-    name = ALIASES.get(fittype, fittype)
+    """Looks up the ModelSpec for a fittype name."""
     try:
-        return MODEL_SPECS[name]
+        return MODEL_SPECS[fittype]
     except KeyError:
         msg = f"Invalid fittype '{fittype}', please choose a valid fitting model, or add a new one into the code."
         logging.warning(msg)

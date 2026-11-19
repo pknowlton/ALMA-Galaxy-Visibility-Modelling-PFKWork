@@ -8,14 +8,15 @@
 #              the terminal console.
 #
 # Usage:
-#   ./launch_fittings_scratch_bshlog_pfk.sh <IN_DIR> <OUT_DIR> <NAME> <DATA_PATH> <FITTYPE>
+#   ./launch_fittings_scratch_bshlog_pfk.sh <IN_DIR> <OUT_DIR> <NAME> <DATA_PATH> <FITTYPE> <PRIOR_CARD>
 #
 # Arguments:
-#   $1 - IN_DIR:    Path to directory containing Python scripts and models.
-#   $2 - OUT_DIR:   Target persistent directory for all run outputs.
-#   $3 - NAME:      Identifier/label for the fitting run (used in filenames).
-#   $4 - DATA_PATH: Absolute path to the calibrated UV visibility table.
-#   $5 - FITTYPE:   Model geometry identifier (e.g., 'twod_gaussring').
+#   $1 - IN_DIR:     Path to directory containing Python scripts and models.
+#   $2 - OUT_DIR:    Target persistent directory for all run outputs.
+#   $3 - NAME:       Identifier/label for the fitting run (used in filenames).
+#   $4 - DATA_PATH:  Absolute path to the calibrated UV visibility table.
+#   $5 - FITTYPE:    Model geometry identifier (e.g., 'twod_gaussring').
+#   $6 - PRIOR_CARD: Absolute path to the run's prior card (prior_cards/<NAME>.pc).
 #
 # Pipeline Architecture:
 #   launch_headless_scratch.py (CANFAR session)
@@ -37,6 +38,8 @@ DATA_PATH=$4
 echo "Data Path:        $DATA_PATH"
 FITTYPE=$5
 echo "Fit Type:         $FITTYPE"
+PRIOR_CARD=$6
+echo "Prior Card:       $PRIOR_CARD"
 
 # Next stage in the pipeline (resource usage profiler), sitting next to this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,7 +63,7 @@ echo "Staging area created for logging: ${STAGING_DIR}"
 # '2>&1' redirects stderr to stdout.
 # 'tee' writes the combined stream to both standard output and bashlog.txt.
 # PIPESTATUS[0] captures the exit code of PSR_CMD rather than the exit code of tee.
-"${PSR_CMD}" "${IN_DIR}" "${OUT_DIR}" "${NAME}" "${DATA_PATH}" "${FITTYPE}" 2>&1 | tee "${STAGING_DIR}/output/bashlog.txt"
+"${PSR_CMD}" "${IN_DIR}" "${OUT_DIR}" "${NAME}" "${DATA_PATH}" "${FITTYPE}" "${PRIOR_CARD}" 2>&1 | tee "${STAGING_DIR}/output/bashlog.txt"
 EXIT_CODE=${PIPESTATUS[0]}
 
 exit ${EXIT_CODE}

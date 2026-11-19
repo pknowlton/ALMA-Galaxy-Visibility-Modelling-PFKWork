@@ -72,9 +72,9 @@ flowchart TD
     B --> C["launch_fittings_scratch_psrec_pfk.sh<br>(psrecord CPU & Memory Profiling)"]
     C --> D["launch_fittings_scratch_pfk.sh<br>(Core Execution & Scratch Staging)"]
     D --> E["input_dir/run_dynesty.py<br>(Dynesty Dynamic Nested Sampling + Galario)"]
-    E --> F["output/<fittype>_checkpoint.save<br>& output/<fittype>_dynesty.log"]
+    E --> F["output/<session_name>_checkpoint.save<br>& output/<session_name>_dynesty.log"]
     F --> G["input_dir/visualize_dynesty.py<br>(Residuals, CASA tclean & Multi-panel Plots)"]
-    G --> H["output/<fittype>_plots.pdf"]
+    G --> H["output/<session_name>_plots.pdf<br>& output/carta_files/"]
     H --> I["Cleanup Exit Trap<br>(Syncs all products back to persistent OUT_DIR)"]
 ```
 
@@ -86,11 +86,12 @@ dyn_version/
 ├── launch_fittings_scratch_bshlog_pfk.sh   # Logging wrapper: captures live stdout/stderr to bashlog.txt
 ├── launch_fittings_scratch_psrec_pfk.sh    # Profiler wrapper: tracks CPU/RAM usage with psrecord
 ├── launch_fittings_scratch_pfk.sh          # Core shell runner: scratch staging, Conda activation & cleanup
+├── prior_cards/                            # Prior card per run (<session_name>.pc); <model_name>_legacy.pc are starting points
 └── input_dir/                              # Code and model definitions executed on compute node
     ├── run_dynesty.py                  # Main Dynesty sampling driver with multiprocessing Pool
     ├── model_defs.py                       # Model registry: defines every fittype (ring, blobs, geometry, labels) in one place
     ├── model_prof.py                       # Generic 2D brightness model builder & Galario interface
-    ├── prior_tform.py                      # Prior ranges and unit hypercube transformations for Dynesty
+    ├── prior_tform.py                      # Prior card reader and unit hypercube transformations for Dynesty
     ├── radec_calc.py                       # Celestial coordinate conversions (Sun et al. clusters & model blobs)
     └── visualize_dynesty.py                # Post-fit imaging, CASA tclean, and PDF figure generation
 ```
@@ -119,6 +120,8 @@ Used inside the compute containers / batch jobs:
 ## How to Run
 
 ### 1. Remote Headless Execution (CANFAR Skaha)
+
+Each run needs a prior card, `dyn_version/prior_cards/<session_name>.pc`, whose first line is `model: <fittype>` followed by one `[low, high]` row per parameter (copy a `<model_name>_legacy.pc` card to start). Check a card with `python prior_tform.py ../prior_cards/<session_name>.pc` from `input_dir/`.
 
 To spawn a remote batch session on CANFAR:
 
@@ -159,10 +162,11 @@ Upon completion, the output directory contains:
 
 | Output Product | Description |
 | :--- | :--- |
-| `<fittype>_checkpoint.save` | Serialized Dynesty sampler state containing all nested samples, weights, and evidence estimates. |
-| `<fittype>_dynesty.log` | Text log containing live sampling progression, Bayesian log-evidence $\ln \mathcal{Z} \pm \sigma$, sampling efficiency, and parameter quantiles (16th, 50th, 84th percentiles). |
-| `<fittype>_plots.pdf` | Multipage PDF report containing:<br>• **Page 1**: Dynesty summary run plot (live points, evidence convergence, sample weights).<br>• **Page 2**: Posterior corner plot with 1D parameter marginals and 2D covariance contours.<br>• **Page 3**: 3-panel comparison (Observed CLEAN image, Model sky intensity, CLEAN residual visibilities) in $\text{MJy}/\text{sr}$.<br>• **Page 4**: 3-panel comparison with model contour overlays.<br>• **Page 5**: 3-panel comparison with cluster positions from Sun et al. (2024).<br>• **Pages 6+**: High-resolution $2'' \times 2''$ zoom cutouts and 1D RA/Dec brightness profile slices for each modeled clump / peak. |
-| `data_plot.fits`, `ring_model.fits`, `resid_plot.fits` | 2D FITS images with full WCS coordinates containing observed data, best-fit model, and residual maps in $\text{MJy}/\text{sr}$ for inspection in CARTA/DS9. |
+| `<session_name>_checkpoint.save` | Serialized Dynesty sampler state containing all nested samples, weights, and evidence estimates. |
+| `<session_name>_dynesty.log` | Text log containing live sampling progression, Bayesian log-evidence $\ln \mathcal{Z} \pm \sigma$, sampling efficiency, and parameter quantiles (16th, 50th, 84th percentiles). |
+| `<session_name>_plots.pdf` | Multipage PDF report containing:<br>• **Page 1**: Dynesty summary run plot (live points, evidence convergence, sample weights).<br>• **Page 2**: Posterior corner plot with 1D parameter marginals and 2D covariance contours.<br>• **Page 3**: 3-panel comparison (Observed CLEAN image, Model sky intensity, CLEAN residual visibilities) in $\text{MJy}/\text{sr}$.<br>• **Page 4**: 3-panel comparison with model contour overlays.<br>• **Page 5**: 3-panel comparison with cluster positions from Sun et al. (2024).<br>• **Pages 6+**: High-resolution $2'' \times 2''$ zoom cutouts and 1D RA/Dec brightness profile slices for each modeled clump / peak. |
+| `carta_files/` (`data_plot.fits`, `ring_model.fits`, `resid_plot.fits`) | 2D FITS images with full WCS coordinates containing observed data, best-fit model, and residual maps in $\text{MJy}/\text{sr}$ for inspection in CARTA/DS9. |
+| `<session_name>.pc` | Copy of the prior card used for the run. |
 | `<name>_psrecord.png` & `.txt` | Resource monitoring profile tracking CPU % and memory (MB) utilization over the duration of the run. |
 | `bashlog.txt` | Complete stdout and stderr log captured during the execution of all shell and Python stages. |
 
@@ -171,3 +175,5 @@ Upon completion, the output directory contains:
 ## AI-Assisted Development
 
 This repository has been updated and structured with the assistance of **Google Antigravity**.
+
+It has also been developed with the assistance of **Cursor**, using **Claude Opus 5.5**, **Claude Sonnet 5.5**, **Gemini 3.8 Flash**, **Gemini 3.1 Pro**, and **Composer 2.5**.

@@ -23,9 +23,14 @@ Key Concepts:
   to single threads to prevent CPU oversubscription.
 
 Usage:
-    python run_dynesty.py <fittype> [--nlive 250] [--maxbatch 5] [--dlogz 0.1] [--seed 42] [--no-resume]
+    python run_dynesty.py <fittype> [--run-name NAME] [--prior-card prior_card.pc] [--nlive 250] [--maxbatch 5] [--dlogz 0.1] [--seed 42] [--no-resume]
 
-    A run resumes from ./output/<fittype>_checkpoint.save when that file exists;
+    Prior ranges are read from the prior card (see prior_tform.py); the launch
+    scripts stage the run's card as ./prior_card.pc.
+
+    Output files are named after the run (--run-name, default: the fittype):
+    ./output/<run_name>_dynesty.log and ./output/<run_name>_checkpoint.save.
+    A run resumes from its checkpoint when that file exists;
     pass --no-resume to ignore it and start fresh.
 
 Example:
@@ -146,6 +151,8 @@ def main():
         description="Run Dynesty dynamic nested sampling for ALMA visibility modeling."
     )
     parser.add_argument("fittype", type=str, help="Model profile identifier (e.g., 'twod_gaussring').")
+    parser.add_argument("--run-name", type=str, default=None, help="Run name used to name the output files (default: the fittype).")
+    parser.add_argument("--prior-card", type=str, default="prior_card.pc", help="Prior card file (default: prior_card.pc).")
     parser.add_argument("--nlive", type=int, default=250, help="Initial number of live points (default: 250).")
     parser.add_argument("--maxbatch", type=int, default=5, help="Maximum number of dynamic batches to add (default: 5).")
     parser.add_argument("--dlogz", type=float, default=0.1, help="Target evidence stopping criterion dlogz (default: 0.1).")
@@ -155,6 +162,7 @@ def main():
     pargs = parser.parse_args()
 
     fittype = pargs.fittype
+    run_name = pargs.run_name or fittype
     nlive = pargs.nlive
     maxbatch = pargs.maxbatch
     dlogz = pargs.dlogz
@@ -165,7 +173,7 @@ def main():
 
     # Configure run logger
     os.makedirs('./output', exist_ok=True)
-    logfile = './output/' + fittype + '_dynesty.log'
+    logfile = './output/' + run_name + '_dynesty.log'
     logging.basicConfig(
         filename=logfile,
         filemode='a',
@@ -177,20 +185,21 @@ def main():
     logging.info('=================================================================')
     logging.info('Dynesty Bayesian Visibility Modeling Execution Started')
     logging.info('=================================================================')
+    logging.info('Run name: %s', run_name)
     logging.info('Fittype: %s', fittype)
     logging.info('Random seed: %d', seed)
     logging.info('nlive_init: %d, maxbatch: %d, dlogz_init: %.3f', nlive, maxbatch, dlogz)
 
-    # Dynamically look up prior transform function matching the model name
+    # Build the prior transform from the run's prior card
     try:
-        prior_transform = getattr(prior_tform, f"{fittype}_ptform")
-    except AttributeError:
-        msg = f"No prior function '{fittype}_ptform' found in prior_tform.py, please check spelling or add function."
-        logging.warning(msg)
-        raise ValueError(msg)
+        prior_transform = prior_tform.make_ptform(fittype, pargs.prior_card)
+    except (OSError, ValueError) as e:
+        logging.warning(f"Could not load prior card '{pargs.prior_card}': {e}")
+        raise
 
-    logging.info(f'Prior transform function is {fittype}_ptform')
-    
+    card_model, _ = prior_tform.read_prior_card(pargs.prior_card)
+    logging.info(f"Prior card: {pargs.prior_card} (model: {card_model})")
+
     labels, units, ndim = model_addon(fittype)
 
     logging.info(f"Dimensions for {fittype}: {ndim}")
@@ -212,7 +221,7 @@ def main():
     periodic = periodic_dims if len(periodic_dims) > 0 else None
     logging.info("Periodic parameter indices: %s", periodic_dims)
 
-    check_file = './output/' + fittype + '_checkpoint.save'
+    check_file = './output/' + run_name + '_checkpoint.save'
     fit_start = time.perf_counter()
 
     logging.info('Initializing Dynesty DynamicNestedSampler with dynesty.pool.Pool(%d)...', NCORES)

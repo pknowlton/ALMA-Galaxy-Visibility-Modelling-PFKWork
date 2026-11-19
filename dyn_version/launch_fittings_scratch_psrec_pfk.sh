@@ -7,14 +7,15 @@
 #              child processes), saving both a time-series text log and a PNG plot.
 #
 # Usage:
-#   ./launch_fittings_scratch_psrec_pfk.sh <IN_DIR> <OUT_DIR> <NAME> <DATA_PATH> <FITTYPE>
+#   ./launch_fittings_scratch_psrec_pfk.sh <IN_DIR> <OUT_DIR> <NAME> <DATA_PATH> <FITTYPE> <PRIOR_CARD>
 #
 # Arguments:
-#   $1 - IN_DIR:    Path to directory containing input Python scripts and modules.
-#   $2 - OUT_DIR:   Persistent destination directory for all run outputs.
-#   $3 - NAME:      Run name/label used for tagging resource profiling output files.
-#   $4 - DATA_PATH: Absolute path to the calibrated UV visibility table.
-#   $5 - FITTYPE:   Model geometry identifier (e.g., 'twod_gaussring').
+#   $1 - IN_DIR:     Path to directory containing input Python scripts and modules.
+#   $2 - OUT_DIR:    Persistent destination directory for all run outputs.
+#   $3 - NAME:       Run name/label used for tagging resource profiling output files.
+#   $4 - DATA_PATH:  Absolute path to the calibrated UV visibility table.
+#   $5 - FITTYPE:    Model geometry identifier (e.g., 'twod_gaussring').
+#   $6 - PRIOR_CARD: Absolute path to the run's prior card.
 #
 # Output Products:
 #   - ${NAME}_psrecord.txt: Tabular time series of timestamp, CPU %, and memory (MB).
@@ -34,6 +35,8 @@ DATA_PATH=$4
 echo "Data Path:        $DATA_PATH"
 FITTYPE=$5
 echo "Fit Type:         $FITTYPE"
+PRIOR_CARD=$6
+echo "Prior Card:       $PRIOR_CARD"
 
 # Core execution script being profiled (sits next to this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,7 +58,7 @@ plotfile="${PSR_DIR}/${NAME}_psrecord.png"
 # --plot:             File to save generated graphical plot upon completion
 # --include-children: Tracks resources of all subprocesses spawned by the shell (e.g. Python, CASA)
 # --interval 60:      Sample CPU/RAM every 60 seconds
-psrecord "${BSH_CMD} ${IN_DIR} ${OUT_DIR} ${DATA_PATH} ${FITTYPE}" \
+psrecord "${BSH_CMD} ${IN_DIR} ${OUT_DIR} ${NAME} ${DATA_PATH} ${FITTYPE} ${PRIOR_CARD}" \
   --log "$txtfile" \
   --plot "$plotfile" \
   --include-children \

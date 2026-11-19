@@ -1,0 +1,10 @@
+model: twod_gaussring_nonuni
+# Legacy priors (formerly hardcoded in prior_tform.py)
+[6.417, 9.417], # 0: Ring Peak brightness [log10(Jy/sr)] -> converted to LogFlux [-3.0, 0.0] Jy
+[0.05, 4.0],    # 1: Ring Gaussian width sigma [arcsec]  -> converted to LogSigma [-1.301, 0.602]
+[3.0, 10.0],    # 2: Ring center radius [arcsec]
+[0.0, 85.0],    # 3: Disk inclination angle [deg]
+[0.0, 180.0],   # 4: Disk position angle PA [deg] (East of North, 180 deg periodicity)
+[-4.0, 4.0],    # 5: Centroid RA offset dRA [arcsec]
+[-4.0, 4.0],    # 6: Centroid Dec offset dDec [arcsec]
+[0.0, 180.0]    # 7: Profile Azimuthal Offset [deg] (East of North in disk frame, 180 deg periodicity for m=2 mode)

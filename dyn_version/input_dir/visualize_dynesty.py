@@ -2,7 +2,7 @@ r"""
 Dynesty Visualization, Residual Imaging, and Post-Processing
 =============================================================
 This script post-processes the results of a Dynesty nested sampling run:
-1. Restores the sampling state from the checkpoint file (`<fittype>_checkpoint.save`).
+1. Restores the sampling state from the checkpoint file (`<run_name>_checkpoint.save`).
 2. Extracts parameter posteriors and selects the maximum-likelihood joint sample
    as the best-fit model ($\hat{\theta}_{\text{ML}}$).
 3. Generates Dynesty diagnostic figures (run progression summary and corner plot).
@@ -215,9 +215,10 @@ def safe_add_beam(ax, header=None, frame=False, color='white', corner='bottom le
     except Exception as e:
         logging.warning(f"Could not add fallback beam patch: {e}")
 
-def build_summary_rows(res, pars_bf, weights, fittype):
+def build_summary_rows(res, pars_bf, weights, fittype, user, ranges):
     """
-    Builds the rows of the final summary table. Each row is
+    Builds the rows of the final summary table. `user` and `ranges` are the prior
+    card table and its compiled Dynesty ranges (from prior_tform.load_priors). Each row is
     [Parameter (unit), Prior Low, Prior High, ML Estimate, Median (+84% / -16%)] and the table contains:
     - Free parameters fitted by Dynesty with integrated units: "Parameter (unit)"
     - Physical conversions:
@@ -274,13 +275,13 @@ def build_summary_rows(res, pars_bf, weights, fittype):
     if spec.has_ring:
         # Row 1: Ring LogFlux
         q_lf = get_quantiles(res.samples[:, 0])
-        add_table_row("Ring LogFlux", "log(Jy)", pt_stream.RING_PRIOR_RANGES[0, 0], pt_stream.RING_PRIOR_RANGES[0, 1],
+        add_table_row("Ring LogFlux", "log(Jy)", ranges[0, 0], ranges[0, 1],
                       pars_bf[0], q_lf)
 
         # Row 2: Ring Flux (Jy)
         flux_samples = 10.0**res.samples[:, 0]
         q_flux = get_quantiles(flux_samples)
-        add_table_row("Ring Flux", "Jy", 10.0**pt_stream.RING_PRIOR_RANGES[0, 0], 10.0**pt_stream.RING_PRIOR_RANGES[0, 1],
+        add_table_row("Ring Flux", "Jy", 10.0**ranges[0, 0], 10.0**ranges[0, 1],
                       10.0**pars_bf[0], q_flux)
 
         # Row 3: Ring LogPeak (log(Jy/sr))
@@ -295,24 +296,24 @@ def build_summary_rows(res, pars_bf, weights, fittype):
         ring_peak_ml = (10.0**pars_bf[0]) / max(area_ring_ml, 1e-30)
         ring_logpeak_ml = np.log10(max(ring_peak_ml, 1e-30))
 
-        add_table_row("Ring LogPeak", "log(Jy/sr)", pt_stream.COMMON_RING_PRIORS[0, 0], pt_stream.COMMON_RING_PRIORS[0, 1],
+        add_table_row("Ring LogPeak", "log(Jy/sr)", user[0, 0], user[0, 1],
                       ring_logpeak_ml, q_rpeak)
 
         # Row 4: Ring LogSigma
         q_ls = get_quantiles(res.samples[:, 1])
-        add_table_row("Ring LogSigma", "log(arcsec)", pt_stream.RING_PRIOR_RANGES[1, 0], pt_stream.RING_PRIOR_RANGES[1, 1],
+        add_table_row("Ring LogSigma", "log(arcsec)", ranges[1, 0], ranges[1, 1],
                       pars_bf[1], q_ls)
 
         # Row 5: Ring Sigma (arcsec)
         sigma_samples = 10.0**res.samples[:, 1]
         q_sigma = get_quantiles(sigma_samples)
-        add_table_row("Ring Sigma", "arcsec", pt_stream.COMMON_RING_PRIORS[1, 0], pt_stream.COMMON_RING_PRIORS[1, 1],
+        add_table_row("Ring Sigma", "arcsec", user[1, 0], user[1, 1],
                       10.0**pars_bf[1], q_sigma)
 
         # Row 6: Ring FWHM (arcsec)
         fwhm_samples = FWHM_FACTOR * sigma_samples
         q_fwhm = get_quantiles(fwhm_samples)
-        add_table_row("Ring FWHM", "arcsec", FWHM_FACTOR * pt_stream.COMMON_RING_PRIORS[1, 0], FWHM_FACTOR * pt_stream.COMMON_RING_PRIORS[1, 1],
+        add_table_row("Ring FWHM", "arcsec", FWHM_FACTOR * user[1, 0], FWHM_FACTOR * user[1, 1],
                       FWHM_FACTOR * 10.0**pars_bf[1], q_fwhm)
 
         # Rows 7-11: Remaining ring parameters
@@ -320,7 +321,7 @@ def build_summary_rows(res, pars_bf, weights, fittype):
         ring_param_units = ["arcsec", "degrees", "degrees", "arcsec", "arcsec"]
         for p_idx, (p_name, p_unit) in enumerate(zip(ring_param_names, ring_param_units), start=2):
             q_p = get_quantiles(res.samples[:, p_idx])
-            add_table_row(p_name, p_unit, pt_stream.COMMON_RING_PRIORS[p_idx, 0], pt_stream.COMMON_RING_PRIORS[p_idx, 1],
+            add_table_row(p_name, p_unit, user[p_idx, 0], user[p_idx, 1],
                           pars_bf[p_idx], q_p)
 
     # Helper function for adding a blob component
@@ -368,53 +369,49 @@ def build_summary_rows(res, pars_bf, weights, fittype):
                       FWHM_FACTOR * 10.0**pars_bf[idx_sigma], q_bfwhm)
 
     # 2. Model-Specific Blob / Profile Components (layout comes from model_defs.py)
-    ranges = pt_stream.PRIOR_RANGES[spec.name]
-    user = pt_stream.BLOB_USER_PRIORS.get(spec.name)
-
     if spec.is_nonuni:
         q_off = get_quantiles(res.samples[:, 7])
-        add_table_row("Prof. Offset", "degrees", pt_stream.NONUNI_RING_PRIOR_RANGES[7, 0], pt_stream.NONUNI_RING_PRIOR_RANGES[7, 1],
+        add_table_row("Prof. Offset", "degrees", ranges[7, 0], ranges[7, 1],
                       pars_bf[7], q_off)
 
     if spec.geometry == 'free':
         # simgauss: one blob followed by its free geometry (Dist, Angle, PA, Offset RA, Offset Dec)
         add_blob_component(spec.blob_name(0), 0, 1,
                            ranges[0],
-                           pt_stream.SIMGAUSS_USER_PRIORS[0],
-                           pt_stream.SIMGAUSS_USER_PRIORS[1])
+                           user[0],
+                           user[1])
         sim_names = ["Dist", "Angle", "PA", "Offset RA", "Offset Dec"]
         sim_units = ["arcsec", "degrees", "degrees", "arcsec", "arcsec"]
         for s_idx, (s_name, s_unit) in enumerate(zip(sim_names, sim_units), start=2):
             q_s = get_quantiles(res.samples[:, s_idx])
-            add_table_row(s_name, s_unit, pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 0], pt_stream.SIMGAUSS_USER_PRIORS[s_idx, 1],
+            add_table_row(s_name, s_unit, user[s_idx, 0], user[s_idx, 1],
                           pars_bf[s_idx], q_s)
     else:
         for k in range(spec.n_blobs):
             name = spec.blob_name(k)
             idx_base = spec.blob_index(k)
-            u_base = 4 * k
             add_blob_component(name, idx_base, idx_base + 1,
                                ranges[idx_base],
-                               user[u_base],
-                               user[u_base + 1])
+                               user[idx_base],
+                               user[idx_base + 1])
             q_dist = get_quantiles(res.samples[:, idx_base + 2])
-            add_table_row(f"{name} Dist", "arcsec", user[u_base + 2, 0], user[u_base + 2, 1],
+            add_table_row(f"{name} Dist", "arcsec", user[idx_base + 2, 0], user[idx_base + 2, 1],
                           pars_bf[idx_base + 2], q_dist)
             q_ang = get_quantiles(res.samples[:, idx_base + 3])
-            add_table_row(f"{name} Angle", "degrees", user[u_base + 3, 0], user[u_base + 3, 1],
+            add_table_row(f"{name} Angle", "degrees", user[idx_base + 3, 0], user[idx_base + 3, 1],
                           pars_bf[idx_base + 3], q_ang)
 
     return table_rows
 
 
-def render_summary_table_page(res, pars_bf, weights, fittype, pp):
+def render_summary_table_page(res, pars_bf, weights, fittype, user, ranges, pp):
     """
     Constructs and saves the final summary table PDF page (rows from `build_summary_rows`).
     - Two-tiered table header:
         - (Prior information) spanning Prior Low & Prior High
         - (Results) spanning ML Estimate & Median (+84% / -16%)
     """
-    table_rows = build_summary_rows(res, pars_bf, weights, fittype)
+    table_rows = build_summary_rows(res, pars_bf, weights, fittype, user, ranges)
 
     # Render Multi-Level Table onto Matplotlib Figure
     col_labels = ["Parameter", "Low", "High", "ML Estimate", "Median Estimate"]
@@ -475,7 +472,7 @@ def render_summary_table_page(res, pars_bf, weights, fittype, pp):
     plt.close(fig_tab)
     logging.info('Successfully saved final summary table page to PDF...')
 
-def prior_sector_outlines(pars_bf, fittype, n_arc=60):
+def prior_sector_outlines(pars_bf, fittype, ranges, n_arc=60):
     """
     Outlines (in RA/Dec degrees) of the region each blob's position prior allows.
 
@@ -493,6 +490,8 @@ def prior_sector_outlines(pars_bf, fittype, n_arc=60):
         Best-fit parameters (supplies the disk position angle and centre offsets).
     fittype : str
         Model name registered in model_defs.py.
+    ranges : numpy.ndarray
+        Compiled prior ranges from the prior card (prior_tform.load_priors).
     n_arc : int
         Points used to draw each curved edge.
 
@@ -505,7 +504,6 @@ def prior_sector_outlines(pars_bf, fittype, n_arc=60):
     if spec.n_blobs == 0:
         return []
 
-    ranges = pt_stream.PRIOR_RANGES[spec.name]
     posangle, dRA, dDec = spec.geometry_params(pars_bf)
     phase_center = SkyCoord(PHASE_CENTER_RA, PHASE_CENTER_DEC, frame='icrs')
     center = phase_center.spherical_offsets_by(dRA * u.arcsec, dDec * u.arcsec)
@@ -608,14 +606,23 @@ def main():
         help="Folder holding the run_dynesty.py checkpoint (read) and receiving the log, PDF and FITS products "
              "(written). Created if missing. Default: ./output/"
     )
+    parser.add_argument(
+        "--run-name", default=None,
+        help="Run name used to name the checkpoint, log and PDF (default: the fittype)."
+    )
+    parser.add_argument(
+        "--prior-card", default="prior_card.pc",
+        help="Prior card used for the fit (see prior_tform.py). Default: prior_card.pc"
+    )
     pargs = parser.parse_args()
 
     fittype = pargs.fittype
+    run_name = pargs.run_name or fittype
     casa_dir = pargs.casa_dir
     output_dir = pargs.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    logfile = os.path.join(output_dir, fittype + '_dynesty.log')
+    logfile = os.path.join(output_dir, run_name + '_dynesty.log')
     logging.basicConfig(
         filename=logfile,
         filemode='a',
@@ -625,14 +632,18 @@ def main():
         force=True
     )
     logging.info("==========Visualization Output==========")
+    logging.info('Run name: %s', run_name)
     logging.info('Fittype: %s', fittype)
     logging.info(f"CASA folder: {casa_dir}")
     logging.info(f"Output folder: {output_dir}")
 
+    prior_user, prior_ranges = pt_stream.load_priors(pargs.prior_card, fittype)
+    logging.info(f"Prior card: {pargs.prior_card}")
+
     # --------------------------------------------------------------------------
     # 1. Restore Dynesty Checkpoint & Coherent Best-Fit Parameter Selection
     # --------------------------------------------------------------------------
-    check_file = os.path.join(output_dir, fittype + '_checkpoint.save')
+    check_file = os.path.join(output_dir, run_name + '_checkpoint.save')
     sampler = DynamicNestedSampler.restore(check_file)
     res = sampler.results
 
@@ -676,7 +687,7 @@ def main():
         else:
             logging.info(f"  {labels[i]:<25} : {median:.4f} (+{p1:.4f} / -{m1:.4f}) {units[i]}")
 
-    pdf_plot = os.path.join(output_dir, fittype + '_plots.pdf')
+    pdf_plot = os.path.join(output_dir, run_name + '_plots.pdf')
     pp = PdfPages(pdf_plot)
     logging.info(f'Plot File: {pdf_plot}')
 
@@ -1019,7 +1030,7 @@ def main():
     plt.close(fig)
 
     # --- 1x3 page: same panels as row 0 above, with each blob's position prior overlaid ---
-    prior_outlines = prior_sector_outlines(pars_bf, fittype)
+    prior_outlines = prior_sector_outlines(pars_bf, fittype, prior_ranges)
     if prior_outlines:
         render_prior_sector_page(pp, data_plot, ring_model, resid_plot, data_wcs, mod_wcs, hdr_data,
                                  prior_outlines, vmin_full, vmax_full)
@@ -1033,9 +1044,11 @@ def main():
     hdu_model = fits.PrimaryHDU(data=ring_model, header=header_model)
     hdu_resid = fits.PrimaryHDU(data=resid_plot, header=header_data)
 
-    hdu_data.writeto(os.path.join(output_dir, "data_plot.fits"), overwrite=True)
-    hdu_model.writeto(os.path.join(output_dir, "ring_model.fits"), overwrite=True)
-    hdu_resid.writeto(os.path.join(output_dir, "resid_plot.fits"), overwrite=True)
+    carta_dir = os.path.join(output_dir, "carta_files")
+    os.makedirs(carta_dir, exist_ok=True)
+    hdu_data.writeto(os.path.join(carta_dir, "data_plot.fits"), overwrite=True)
+    hdu_model.writeto(os.path.join(carta_dir, "ring_model.fits"), overwrite=True)
+    hdu_resid.writeto(os.path.join(carta_dir, "resid_plot.fits"), overwrite=True)
 
     # --------------------------------------------------------------------------
     # 7. Zoomed-In Blob Analysis & 1D Brightness Profiles (Data, Model, Residuals)
@@ -1199,7 +1212,7 @@ def main():
     # 8. Summary Table of Posterior Estimates and Derived Quantities
     # --------------------------------------------------------------------------
     logging.info('Rendering summary table page to PDF...')
-    render_summary_table_page(res, pars_bf, weights, fittype, pp)
+    render_summary_table_page(res, pars_bf, weights, fittype, prior_user, prior_ranges, pp)
 
     pp.close()
     logging.info('Post-processing and figure generation finished successfully!')

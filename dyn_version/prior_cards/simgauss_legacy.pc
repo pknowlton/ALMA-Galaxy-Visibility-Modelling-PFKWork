@@ -1,0 +1,10 @@
+model: simgauss
+# Legacy priors (formerly hardcoded in prior_tform.py)
+# Single simulated Gaussian blob test model: one blob, then free geometry (PA, dRA, dDec)
+[8.0, 10.0],    # 0: Blob Peak [log10(Jy/sr)]      -> converted to LogFlux [-2.27, 0.46]
+[0.6, 1.4],     # 1: Blob Width sigma [arcsec]     -> converted to LogSigma [-0.222, 0.146]
+[5.0, 7.0],     # 2: Blob Radial Dist [arcsec]     (sampled uniformly in area on disk)
+[90.0, 180.0],  # 3: Blob Azimuthal Angle [deg]    (East of North, CCW)
+[0.0, 15.0],    # 4: Position Angle [deg]
+[-4.0, 4.0],    # 5: RA Offset [arcsec]
+[-4.0, 4.0]     # 6: Dec Offset [arcsec]
