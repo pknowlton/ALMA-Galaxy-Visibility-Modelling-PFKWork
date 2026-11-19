@@ -198,9 +198,9 @@ RESID1BLOB_USER_PRIORS = np.array([
 # Disk PA, dRA, and dDec are fixed inside the model and are not sampled.
 RESID3BLOB_USER_PRIORS = np.array([
     # Blob 1:
-    [6.030, 8.530], # 0:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
-    [0.05, 0.4],    # 1:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
-    [4.0, 10.0],    # 2:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+    [6.030, 8.530], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+    [0.05, 0.4],    # 8:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+    [4.0, 10.0],    # 9:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
     [330.0, 360.0], # 3:  Blob 1 Angle [deg] (East of North, CCW)
     # Blob 2:
     [6.030, 8.530], # 4:  Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]

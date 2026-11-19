@@ -555,7 +555,7 @@ def render_prior_sector_page(pp, data_plot, model_plot, resid_plot, data_wcs, mo
 
         ax.set_autoscale_on(False)   # keep the image limits; do not zoom out to fit the sectors
         for outline in outlines:
-            ax.add_patch(Polygon(outline, closed=True, fill=False, edgecolor='teal', linestyle=':',
+            ax.add_patch(Polygon(outline, closed=True, fill=False, edgecolor='cyan', linestyle=':',
                                  linewidth=2.5, transform=ax.get_transform('world'), zorder=12))
 
     # Hide y tick labels on columns 1 and 2
@@ -839,7 +839,7 @@ def main():
         deconvolver='hogbom',
         restoringbeam='common',
         weighting='briggs',
-        robust=0.5,
+        robust=1.0,
         niter=10000,
         interactive=False,
         threshold='5.52e-5 Jy',
@@ -859,7 +859,7 @@ def main():
         deconvolver='hogbom',
         restoringbeam='common',
         weighting='briggs',
-        robust=0.5,
+        robust=1.0,
         niter=0,  # Dirty residual map: prevents non-linear deconvolution of noise
         interactive=False
     )
@@ -894,6 +894,8 @@ def main():
     bmaj_deg = hdr_data.get('BMAJ', 0.0)
     bmin_deg = hdr_data.get('BMIN', 0.0)
     bpa_deg = hdr_data.get('BPA', 0.0)
+
+    logging.info(f'Beam Parameters: BMAJ={bmaj_deg*3600}, BMIN={bmin_deg*3600}, BPA={bpa_deg}')
 
     numpix = data_plot.shape[0]
     pixarcsec = abs(data_wcs.wcs.cdelt[1]) * 3600.0
@@ -979,7 +981,7 @@ def main():
         if ellipse_ra is not None:
             ax.plot(ellipse_ra, ellipse_dec, transform=ax.get_transform('world'),
                     color='white', linestyle='--', linewidth=1.5, zorder=12, label='Ring Ridge Peak')
-        ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), color='blue', marker='x', s=120, linewidth=2, zorder=15, label='Fitted Model')
+        ax.scatter(dynest_ra, dynest_dec, transform=ax.get_transform('world'), facecolors='none', edgecolors='dodgerblue', s=100, linewidth=1, zorder=15, label='Fitted Model')
         ax.scatter(phase_center.ra.deg, phase_center.dec.deg, transform=ax.get_transform('world'), color='yellow', marker='+', s=120, linewidth=2, zorder=15, label='Phase Center')
 
     all_axes = row0_axes + row1_axes
