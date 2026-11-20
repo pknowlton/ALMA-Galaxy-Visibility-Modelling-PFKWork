@@ -1,0 +1,44 @@
+model: twod_gauss7blob
+# Legacy priors (formerly hardcoded in prior_tform.py)
+[6.417, 9.417], # 0: Ring Peak brightness [log10(Jy/sr)] -> converted to LogFlux [-3.0, 0.0] Jy
+[0.05, 4.0],    # 1: Ring Gaussian width sigma [arcsec]  -> converted to LogSigma [-1.301, 0.602]
+[3.0, 10.0],    # 2: Ring center radius [arcsec]
+[0.0, 85.0],    # 3: Disk inclination angle [deg]
+[0.0, 180.0],   # 4: Disk position angle PA [deg] (East of North, 180 deg periodicity)
+[-4.0, 4.0],    # 5: Centroid RA offset dRA [arcsec]
+[-4.0, 4.0],    # 6: Centroid Dec offset dDec [arcsec]
+# Blob 1: North clump (YMC 6 complex, disk angle ~348 deg)
+[6.030, 8.530], # 7:  Blob 1 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+[0.05, 0.4],    # 8:  Blob 1 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+[4.0, 10.0],    # 9:  Blob 1 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+[330.0, 340.0], # 10: Blob 1 Angle [deg] (East of North, CCW)
+# Blob 2: South-West clump (YMC 17/18 complex, disk angle ~182-185 deg)
+[6.030, 8.530], # 11: Blob 2 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+[0.05, 0.4],    # 12: Blob 2 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+[4.0, 10.0],    # 13: Blob 2 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+[177.0, 205.0], # 14: Blob 2 Angle [deg] (East of North, CCW)
+# Blob 3: South-East clump (YMC 15 complex, disk angle ~171 deg)
+[6.030, 8.530], # 15: Blob 3 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+[0.05, 0.4],    # 16: Blob 3 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+[4.0, 10.0],    # 17: Blob 3 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+[160.0, 177.0]  # 18: Blob 3 Angle [deg] (East of North, CCW)
+# Blob 4:
+[6.030, 8.530], # 19: Blob 4 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+[0.05, 0.4],    # 20: Blob 4 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+[4.0, 10.0],    # 21: Blob 4 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+[340.0, 360.0], # 22: Blob 4 Angle [deg] (East of North, CCW)
+# Blob 5:
+[6.030, 8.530], # 23: Blob 5 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+[0.05, 0.4],    # 24: Blob 5 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+[4.0, 10.0],    # 25: Blob 5 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+[270.0, 330.0], # 26: Blob 5 Angle [deg] (East of North, CCW)
+# Blob 6:
+[6.030, 8.530], # 27: Blob 6 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+[0.05, 0.4],    # 28: Blob 6 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+[4.0, 10.0],    # 29: Blob 6 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+[140.0, 160.0]  # 30: Blob 6 Angle [deg] (East of North, CCW)
+# Blob 7:
+[6.030, 8.530], # 31: Blob 6 Peak [log10(Jy/sr)]   -> converted to LogFlux [-5.5, -3.0]
+[0.05, 0.4],    # 32: Blob 6 Width sigma [arcsec]  -> converted to LogSigma [-1.301, -0.398]
+[4.0, 10.0],    # 33: Blob 6 Radial Dist [arcsec]  (sampled uniformly in area on disk)
+[365.0, 385.0]  # 34: Blob 6 Angle [deg] (East of North, CCW)

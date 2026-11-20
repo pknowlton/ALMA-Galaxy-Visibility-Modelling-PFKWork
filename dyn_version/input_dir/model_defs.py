@@ -176,6 +176,7 @@ MODEL_SPECS = {spec.name: spec for spec in [
     ModelSpec('twod_gauss1blob',         ring='uniform',    n_blobs=1),
     ModelSpec('twod_gauss2blob',         ring='uniform',    n_blobs=2),
     ModelSpec('twod_gauss3blob',         ring='uniform',    n_blobs=3),
+    ModelSpec('twod_gauss7blob',         ring='uniform',    n_blobs=7),
     ModelSpec('twod_gauss3blob_nonuni',  ring='nonuniform', n_blobs=3),
     ModelSpec('resid_gauss1blob',        n_blobs=1, geometry='fixed'),
     ModelSpec('resid_gauss3blob',        n_blobs=3, geometry='fixed'),
